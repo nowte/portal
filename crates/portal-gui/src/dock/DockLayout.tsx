@@ -16,6 +16,7 @@ import { GuidePanel } from "../panels/GuidePanel";
 import { UptimePanel } from "../panels/UptimePanel";
 import { MonitorPage } from "../panels/MonitorPage";
 import { ServerWorkspace } from "./ServerWorkspace";
+import { EditorPanel } from "../panels/EditorPanel";
 import { TabClose } from "../components/TabClose";
 
 // DIŞ dock: sabit paneller (Home/Hosts/Guide) + her sunucu için TEK "server" sayfası.
@@ -27,6 +28,15 @@ const components: Record<string, React.FunctionComponent<IDockviewPanelProps>> =
   uptime: () => <UptimePanel />,
   monitorpage: (p: IDockviewPanelProps) => <MonitorPage monitorId={p.params.monitorId as string} />,
   server: (p: IDockviewPanelProps) => <ServerWorkspace hostId={p.params.hostId as string} />,
+  // Yüzen editör DIŞ dock'ta yaşar (iç dock `overflow:hidden` ile kırpılıyor).
+  editor: (p: IDockviewPanelProps) => (
+    <EditorPanel
+      hostId={p.params.hostId as string}
+      sessionId={p.params.sessionId as number}
+      path={p.params.path as string}
+      floating
+    />
+  ),
 };
 
 // Sabit paneller (Home/Hosts/Guide) için kapatma (×) düğmesi OLMAYAN "plain" sekme.

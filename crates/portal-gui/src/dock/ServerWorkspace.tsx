@@ -56,7 +56,6 @@ const nestedComponents: Record<string, React.FunctionComponent<IDockviewPanelPro
       hostId={p.params.hostId as string}
       sessionId={p.params.sessionId as number}
       path={p.params.path as string}
-      panelId={p.api.id}
     />
   ),
 };

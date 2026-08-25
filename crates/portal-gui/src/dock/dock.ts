@@ -532,11 +532,31 @@ export function openEditor(hostId: string, title: string, sessionId: number, pat
   );
 }
 
-/** Bir pane'i yüzen gruba taşır (editörü ekranda serbest gezdirmek için). */
-export function floatPane(hostId: string, panelId: string): void {
-  const dock = serverApis.get(hostId);
-  const panel = dock?.getPanel(panelId);
-  if (dock && panel) dock.addFloatingGroup(panel);
+/** Editörü DIŞ dock'ta yüzen bir pencereye taşır.
+ *
+ *  ⚠️ İÇ dock'ta yüzdürmek işe yaramaz: sunucu sayfası `renderer:"always"` ile
+ *  açıldığı için iç dock `.dv-render-overlay` katmanının içinde yaşar ve o katman
+ *  `overflow: hidden` taşır (yuvarlak alt köşeler için). Yüzen pencere o kırpmaya
+ *  takılıp panelin dışına çıkamıyor, "bir şeylerin altında kalıyor" görünüyordu.
+ *  Dış dock kırpılmaz — pencere gerçekten her şeyin üstünde durur. */
+export function floatEditor(hostId: string, sessionId: number, path: string): void {
+  // İç dock'taki kopyayı kapat: aynı dosya iki yerde açık kalmasın.
+  serverApis.get(hostId)?.getPanel(`edit:${sessionId}:${path}`)?.api.close();
+  const id = `floatedit:${sessionId}:${path}`;
+  const existing = api?.getPanel(id);
+  if (existing) {
+    existing.focus();
+    return;
+  }
+  api?.addPanel({
+    id,
+    component: "editor",
+    title: baseNameOf(path),
+    params: { hostId, sessionId, path, floating: true },
+    // Başlık şeridi: dosya adı + kapatma (×) — dockview'ün boş varsayılanı değil.
+    tabComponent: "doctab",
+    floating: { width: 760, height: 520 },
+  });
 }
 
 function baseNameOf(path: string): string {

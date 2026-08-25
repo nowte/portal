@@ -13,19 +13,20 @@ import { Save } from "lucide-react";
 import { listen } from "@tauri-apps/api/event";
 import { sftpRead, sftpWrite } from "../lib/ipc";
 import type { SftpMsg } from "../lib/types";
-import { floatPane } from "../dock/dock";
+import { floatEditor } from "../dock/dock";
 import { ErrorNote } from "../components/ErrorNote";
 
 export function EditorPanel({
   hostId,
   sessionId,
   path,
-  panelId,
+  floating,
 }: {
   hostId: string;
   sessionId: number;
   path: string;
-  panelId: string;
+  /** Zaten yüzen pencerede miyiz? (Float düğmesi gizlenir.) */
+  floating?: boolean;
 }) {
   const [text, setText] = useState<string | null>(null);
   const [saved, setSaved] = useState<string | null>(null);
@@ -97,9 +98,15 @@ export function EditorPanel({
           </span>
           {dirty && <span className="edt-dot" title="Unsaved changes" />}
           <span className="sp" />
-          <button className="tool" title="Float this editor" onClick={() => floatPane(hostId, panelId)}>
-            Float
-          </button>
+          {!floating && (
+            <button
+              className="tool"
+              title="Open in a floating window (stays above everything)"
+              onClick={() => floatEditor(hostId, sessionId, path)}
+            >
+              Float
+            </button>
+          )}
           <button
             className="btn-primary"
             onClick={save}
