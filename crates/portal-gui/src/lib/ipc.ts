@@ -159,6 +159,11 @@ export const sftpRename = (id: number, from: string, to: string): Promise<void> 
   invoke("sftp_rename", { id, from, to });
 export const sftpRemove = (id: number, path: string, isDir: boolean): Promise<void> =>
   invoke("sftp_remove", { id, path, isDir });
+// Gömülü editör: yanıt komuttan DEĞİL, portal://sftp/{id} olayından gelir.
+export const sftpRead = (id: number, path: string): Promise<void> =>
+  invoke("sftp_read", { id, path });
+export const sftpWrite = (id: number, path: string, text: string): Promise<void> =>
+  invoke("sftp_write", { id, path, text });
 
 // ── Uptime monitörü ────────────────────────────────────
 export const listMonitors = (): Promise<MonitorSummary[]> =>

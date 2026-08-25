@@ -3596,7 +3596,7 @@ dependencies = [
 
 [[package]]
 name = "portal-core"
-version = "0.0.0"
+version = "0.9.0"
 dependencies = [
  "argon2 0.5.3",
  "base64 0.22.1",
@@ -3621,7 +3621,7 @@ dependencies = [
 
 [[package]]
 name = "portal-gui"
-version = "0.0.0"
+version = "0.9.0"
 dependencies = [
  "base64 0.22.1",
  "portal-core",

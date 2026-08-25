@@ -1,4 +1,5 @@
 import { type CSSProperties, useEffect, useState } from "react";
+import { createPortal } from "react-dom";
 import { resetLayout, toggleGuide, toggleSidebar } from "../dock/dock";
 
 // Varsayılan WebView sağ-tık menüsünü tamamen değiştirir (kendi monokrom menümüz).
@@ -15,6 +16,9 @@ export function ContextMenu() {
       e.preventDefault();
       setPos({ x: e.clientX, y: e.clientY });
     };
+    // Panel menüleri (host satırı, uzak dosya) kendi `contextmenu` olaylarını
+    // `stopPropagation` ile keser → buraya hiç gelmez, yani ikisi aynı anda
+    // açılmaz. Buraya gelen her olay "boş alana sağ tık" demektir.
     const close = () => setPos(null);
     const onEsc = (e: KeyboardEvent) => {
       if (e.key === "Escape") setPos(null);
@@ -46,7 +50,11 @@ export function ContextMenu() {
     top: Math.min(pos.y, window.innerHeight - 170),
   };
 
-  return (
+  // ⚠️ `document.body`'ye portal: `position: fixed` bir üst elemanda transform /
+  // filter / contain / container-type varsa ONA göre konumlanır — menü tıklanan
+  // yerden uzakta çıkıyordu. Portal ata zincirini tamamen atlar ve menü her
+  // şeyin üstünde kalır (kullanıcı bulgusu).
+  return createPortal(
     <div className="ctx" style={style}>
       <button className="ctx-item" onClick={() => run(toggleSidebar)}>
         Toggle sidebar <span className="sc">Ctrl B</span>
@@ -61,6 +69,7 @@ export function ContextMenu() {
       <button className="ctx-item" onClick={() => run(() => window.location.reload())}>
         Reload
       </button>
-    </div>
+    </div>,
+    document.body,
   );
 }

@@ -31,6 +31,8 @@ interface PortalCtx {
   locked: boolean;
   /** Aktif profilde kurtarma cümlesi var mı (kilit ekranı "recovery ile aç" göstersin mi). */
   hasRecovery: boolean;
+  /** Vault şifreli mi → kimlik "hatırlanabilir" mi (profilsiz modda vault düz metin). */
+  canRemember: boolean;
   profile: string | null;
   selectedHost: string | null;
   selectHost: (id: string | null) => void;
@@ -232,6 +234,7 @@ export function PortalProvider({ children }: { children: ReactNode }) {
         onboarded: boot?.onboarded ?? false,
         locked: boot?.locked ?? false,
         hasRecovery: boot?.has_recovery ?? false,
+        canRemember: boot?.can_remember ?? false,
         profile: boot?.profile ?? null,
         selectedHost,
         selectHost: setSelectedHost,

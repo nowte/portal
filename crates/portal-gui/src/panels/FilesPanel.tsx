@@ -5,6 +5,7 @@
 // gibi göreli yollar her read_dir'de home'a çözülür; böylece realpath gerekmez.
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import {
   ArrowLeft,
   ChevronRight,
@@ -21,6 +22,8 @@ import {
 } from "lucide-react";
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
 import { usePortal } from "../context";
+import { ErrorNote } from "../components/ErrorNote";
+import { openEditor } from "../dock/dock";
 import { setGuideTopic } from "../lib/guide";
 import { requestAuth } from "../components/AuthDialog";
 import { HostKeyModal, type HostKeyReq } from "../components/HostKeyModal";
@@ -67,13 +70,38 @@ function human(n: number): string {
   if (n < 1024 * 1024 * 1024) return `${(n / 1024 / 1024).toFixed(1)} MB`;
   return `${(n / 1024 / 1024 / 1024).toFixed(1)} GB`;
 }
+// Uzak yol iki kipte olabilir: "" veya "foo/bar" = HOME-göreli · "/var/www" = MUTLAK.
+// Çekirdek ikisini de olduğu gibi `read_dir`'e verir; ayrım yalnız burada kurulur.
+function isAbs(p: string): boolean {
+  return p.startsWith("/");
+}
 function remoteInto(p: string, name: string): string {
-  return p && p !== "." ? `${p}/${name}` : name;
+  if (!p || p === ".") return name;
+  if (p === "/") return `/${name}`;
+  return `${p}/${name}`;
 }
 function remoteUp(p: string): string {
+  if (isAbs(p)) {
+    const parts = p.split("/").filter(Boolean);
+    parts.pop();
+    return parts.length ? `/${parts.join("/")}` : "/";
+  }
   const parts = p.split("/").filter(Boolean);
   parts.pop();
   return parts.join("/");
+}
+/** Kullanıcının yazdığı yolu normalize eder ("~" ve "~/x" → home-göreli). */
+function normalizeRemote(input: string): string {
+  const t = input.trim();
+  if (!t || t === "~") return "";
+  if (t.startsWith("~/")) return t.slice(2);
+  if (isAbs(t)) return t === "/" ? "/" : t.replace(/\/+$/, "");
+  return t.replace(/\/+$/, "");
+}
+/** Sunucu "izin yok" mu dedi? SFTP sunucuları farklı diller/kodlar döndürür,
+ *  bu yüzden metin eşlemesi — yanlış pozitifi zararsız (yalnız mesaj değişir). */
+function denied(message: string): boolean {
+  return /permission denied|access denied|not permitted|eacces/i.test(message);
 }
 function localSep(path: string): string {
   return path.includes("\\") ? "\\" : "/";
@@ -84,12 +112,13 @@ function baseName(path: string): string {
 }
 // Uzak yolu (home-göreli) tıklanır breadcrumb parçalarına böler.
 function crumbs(path: string): { name: string; path: string }[] {
+  const abs = isAbs(path);
   const parts = path.split("/").filter(Boolean);
   const out: { name: string; path: string }[] = [];
-  let acc = "";
+  let acc = abs ? "" : "";
   for (const p of parts) {
     acc = acc ? `${acc}/${p}` : p;
-    out.push({ name: p, path: acc });
+    out.push({ name: p, path: abs ? `/${acc}` : acc });
   }
   return out;
 }
@@ -118,11 +147,26 @@ export function FilesPanel({ hostId, deferConnect }: { hostId: string; deferConn
   // "This PC" yol çubuğu düzenlenebilir (C:\Users\... elle yazılabilir).
   const [localInput, setLocalInput] = useState("");
   const [remotePath, setRemotePath] = useState("");
+  // Yol çubuğu iki kipli: breadcrumb (gezinme) ↔ yazılabilir alan (sıçrama).
+  // Yazılabilir alan olmadan HOME DIŞINA çıkmak imkânsızdı (/var/www gibi).
+  const [remoteEdit, setRemoteEdit] = useState<string | null>(null);
   const [remote, setRemote] = useState<RemoteEntry[]>([]);
   const [remoteErr, setRemoteErr] = useState<string | null>(null);
   const [remoteSel, setRemoteSel] = useState<string | null>(null);
   const [transfers, setTransfers] = useState<Transfer[]>([]);
-  const [dropSide, setDropSide] = useState<"local" | "remote" | null>(null);
+  // Sürükleme nereden başladı: hedef göstergesi KARŞI panelde çıksın. Kaynak
+  // panelin kendi üstünde "Drop to transfer" yazması yanıltıcıydı — oraya
+  // bırakmak hiçbir şey yapmıyor (kullanıcı bulgusu).
+  const [dragFrom, setDragFrom] = useState<"local" | "remote" | null>(null);
+  // ⚠️ Kaynak tarafı AYRICA ref'te tut. `dragover` yerli bir olaydır ve
+  // `dragstart`ın hemen ardından tetiklenir; React state o ana kadar
+  // güncellenmemiş olabilir. State'e bakıp `preventDefault` atlanınca tarayıcı
+  // bırakmayı reddediyordu (transfer hiç başlamıyordu). Ref senkron güncellenir;
+  // state yalnız GÖRSEL sınıf için.
+  const dragFromRef = useRef<"local" | "remote" | null>(null);
+  // Sürükleme hayaleti + üstünde durulan panel (pointer tabanlı sürükleme).
+  const [ghost, setGhost] = useState<{ name: string; x: number; y: number } | null>(null);
+  const [overSide, setOverSide] = useState<"local" | "remote" | null>(null);
   // Uzak sağ-tık menüsü + isim (mkdir/rename) dialog'u + silme onayı.
   const [menu, setMenu] = useState<{ entry: RemoteEntry; x: number; y: number } | null>(null);
   const [nameDlg, setNameDlg] = useState<{
@@ -139,9 +183,12 @@ export function FilesPanel({ hostId, deferConnect }: { hostId: string; deferConn
     if (!menu) return;
     const close = () => setMenu(null);
     window.addEventListener("click", close);
+    // Sağ tık `click` üretmez → başka yere sağ tıklayınca bu menü açık kalıyordu.
+    window.addEventListener("contextmenu", close);
     window.addEventListener("blur", close);
     return () => {
       window.removeEventListener("click", close);
+      window.removeEventListener("contextmenu", close);
       window.removeEventListener("blur", close);
     };
   }, [menu]);
@@ -283,6 +330,19 @@ export function FilesPanel({ hostId, deferConnect }: { hostId: string; deferConn
     loadRemote(next);
   };
   // Breadcrumb'tan bir dizine atla (home-göreli).
+  // Çift tıkla gömülü editörde aç. Büyük dosya editöre GİRMEZ: tamamı belleğe
+  // okunuyor ve textarea'da açılıyor — sınır burada, listedeki boyuttan.
+  const EDIT_MAX = 2 * 1024 * 1024;
+  const openRemoteFile = (en: RemoteEntry) => {
+    const id = sessionRef.current;
+    if (id == null || !host) return;
+    if (en.size > EDIT_MAX) {
+      setMessage(`${en.name} is too large to edit here (${human(en.size)}). Download it instead.`);
+      return;
+    }
+    openEditor(hostId, host.label, id, remoteInto(remotePath, en.name));
+  };
+
   const goRemote = (path: string) => {
     setRemotePath(path);
     setRemoteSel(null);
@@ -359,45 +419,114 @@ export function FilesPanel({ hostId, deferConnect }: { hostId: string; deferConn
     }
   };
 
-  // ── sürükle-bırak ──
-  const onDrop = (side: "local" | "remote", e: React.DragEvent) => {
-    e.preventDefault();
-    setDropSide(null);
+  // ── sürükle-bırak: POINTER tabanlı ────────────────────────────────────────
+  //
+  // ⚠️ HTML5 drag-and-drop KULLANMIYORUZ. Tauri/WebView2'de güvenilmez —
+  // dockview için de aynı sebeple `dndStrategy: "pointer"`e geçilmişti
+  // (CLAUDE.md §9). Burada `dragstart` çoğu zaman hiç tetiklenmiyordu: sürükleme
+  // görsel olarak bile başlamıyor, dolayısıyla `dragover`/`drop` da hiç gelmiyordu.
+  //
+  // Pointer olayları her yerde çalışır. Akış: pointerdown → eşiği (5px) geçen
+  // pointermove → hayalet + hedef vurgusu → pointerup'ta isabet testi.
+  const transfer = (item: DragItem, side: "local" | "remote") => {
     const id = sessionRef.current;
-    if (id == null) return;
-    let item: DragItem;
-    try {
-      item = JSON.parse(e.dataTransfer.getData("application/portal"));
-    } catch {
+    if (id == null) {
+      setMessage("Not connected yet — connect this Files panel before transferring.");
       return;
     }
-    if (item.isDir) return; // klasör transferi henüz yok
-    if (item.side === "local" && side === "remote") {
+    if (item.isDir) {
+      setMessage("Folder transfer isn't supported yet — drag files instead.");
+      return;
+    }
+    if (item.side === side) {
+      setMessage("Drop it on the other panel to transfer.");
+      return;
+    }
+    setMessage("");
+    if (item.side === "local") {
       void sftpUpload(id, item.path, remoteInto(remotePathRef.current, item.name));
-    } else if (item.side === "remote" && side === "local") {
+    } else {
       const dest = localPathRef.current + localSep(localPathRef.current) + item.name;
       void sftpDownload(id, item.path, dest);
     }
   };
-  const dragStart = (item: DragItem, e: React.DragEvent) => {
-    e.dataTransfer.setData("application/portal", JSON.stringify(item));
-    e.dataTransfer.effectAllowed = "copy";
+
+  /** İmlecin altındaki panel hangisi? (hayalet `pointer-events:none` olduğu için
+   *  isabet testine karışmaz.) */
+  const paneUnder = (x: number, y: number): "local" | "remote" | null => {
+    const el = document.elementFromPoint(x, y)?.closest(".fpane");
+    if (!el) return null;
+    const panes = Array.from(document.querySelectorAll(".fpane"));
+    const i = panes.indexOf(el);
+    return i === 0 ? "local" : i === 1 ? "remote" : null;
   };
+
+  const beginDrag = (item: DragItem, e: React.PointerEvent) => {
+    if (e.button !== 0 || item.isDir) return; // klasör transferi yok
+    const startX = e.clientX;
+    const startY = e.clientY;
+    let started = false;
+
+    const move = (ev: PointerEvent) => {
+      if (!started) {
+        if (Math.hypot(ev.clientX - startX, ev.clientY - startY) < 5) return;
+        started = true;
+        dragFromRef.current = item.side;
+        setDragFrom(item.side);
+      }
+      setGhost({ name: item.name, x: ev.clientX, y: ev.clientY });
+      setOverSide(paneUnder(ev.clientX, ev.clientY));
+    };
+    const up = (ev: PointerEvent) => {
+      window.removeEventListener("pointermove", move);
+      window.removeEventListener("pointerup", up);
+      window.removeEventListener("pointercancel", up);
+      const over = started ? paneUnder(ev.clientX, ev.clientY) : null;
+      dragFromRef.current = null;
+      setDragFrom(null);
+      setGhost(null);
+      setOverSide(null);
+      if (started && over) transfer(item, over);
+    };
+    window.addEventListener("pointermove", move);
+    window.addEventListener("pointerup", up);
+    window.addEventListener("pointercancel", up);
+  };
+
+  /** Hedef vurgusu: karşı panel, üstünde duruyorsak. */
+  const canDrop = (side: "local" | "remote") => dragFrom !== null && dragFrom !== side;
 
   const active = transfers.filter((t) => t.status === "active").length;
 
   return (
     <div className="files" onPointerDown={() => setGuideTopic("files")}>
+      {/* Geçici uyarı şeridi. `message` bugüne kadar YALNIZ hata ekranında
+          basılıyordu; bağlıyken yapılan uyarılar (bırakma reddedildi, dosya
+          editör için çok büyük) hiç görünmüyordu — sessiz başarısızlık. */}
+      {phase === "ready" && message && (
+        <div className="files-note">
+          <ErrorNote>{message}</ErrorNote>
+          <button className="tool" title="Dismiss" onClick={() => setMessage("")}>
+            <X size={16} strokeWidth={1.75} />
+          </button>
+        </div>
+      )}
+      {ghost &&
+        // Hayalet de body'ye portallanır: `position: fixed` transform taşıyan bir
+        // atanın içinde ONA göre konumlanır (sağ-tık menüsündeki tuzağın aynısı) ve
+        // hayalet imlecin yanında değil başka bir yerde çizilirdi.
+        createPortal(
+          <div className="dragghost mono" style={{ left: ghost.x + 12, top: ghost.y + 12 }}>
+            {ghost.name}
+          </div>,
+          document.body,
+        )}
       <div className="files-panes">
         {/* This PC */}
         <div
-          className={"fpane" + (dropSide === "local" ? " drop" : "")}
-          onDragOver={(e) => {
-            e.preventDefault();
-            setDropSide("local");
-          }}
-          onDragLeave={() => setDropSide(null)}
-          onDrop={(e) => onDrop("local", e)}
+          className={
+            "fpane" + (canDrop("local") ? " drop" : "") + (overSide === "local" ? " over" : "")
+          }
         >
           <div className="fpane-head">
             <HardDrive size={16} strokeWidth={1.75} />
@@ -435,10 +564,9 @@ export function FilesPanel({ hostId, deferConnect }: { hostId: string; deferConn
               <div
                 key={en.path}
                 className={"frow" + (localSel === en.path ? " sel" : "")}
-                draggable={!en.isDir}
                 onClick={() => setLocalSel(en.path)}
-                onDragStart={(e) =>
-                  dragStart({ side: "local", name: en.name, path: en.path, isDir: en.isDir }, e)
+                onPointerDown={(e) =>
+                  beginDrag({ side: "local", name: en.name, path: en.path, isDir: en.isDir }, e)
                 }
                 onDoubleClick={() => {
                   setLocalSel(null);
@@ -478,13 +606,9 @@ export function FilesPanel({ hostId, deferConnect }: { hostId: string; deferConn
 
         {/* Host */}
         <div
-          className={"fpane" + (dropSide === "remote" ? " drop" : "")}
-          onDragOver={(e) => {
-            e.preventDefault();
-            setDropSide("remote");
-          }}
-          onDragLeave={() => setDropSide(null)}
-          onDrop={(e) => onDrop("remote", e)}
+          className={
+            "fpane" + (canDrop("remote") ? " drop" : "") + (overSide === "remote" ? " over" : "")
+          }
         >
           <div className="fpane-head">
             <Server size={16} strokeWidth={1.75} />
@@ -506,24 +630,61 @@ export function FilesPanel({ hostId, deferConnect }: { hostId: string; deferConn
             >
               <FolderPlus size={16} strokeWidth={1.75} />
             </button>
-            <button className="tool" title="Up" onClick={remoteGoUp} disabled={!remotePath}>
+            <button
+              className="tool"
+              title="Up"
+              onClick={remoteGoUp}
+              disabled={!remotePath || remotePath === "/"}
+            >
               <ArrowLeft size={16} strokeWidth={1.75} />
             </button>
             <SpinButton className="tool" title="Refresh" onRun={() => loadRemote(remotePath)} />
           </div>
-          <div className="fpath crumbs">
-            <button className="crumb" onClick={() => goRemote("")} title="Home">
-              ~
-            </button>
-            {crumbs(remotePath).map((c) => (
-              <span className="crumb-seg" key={c.path}>
-                <ChevronRight size={16} strokeWidth={1.75} className="crumb-sep" />
-                <button className="crumb" onClick={() => goRemote(c.path)}>
-                  {c.name}
-                </button>
-              </span>
-            ))}
-          </div>
+          {remoteEdit !== null ? (
+            <input
+              className="fpath fpath-edit mono"
+              value={remoteEdit}
+              spellCheck={false}
+              autoFocus
+              placeholder="Type a path, e.g. /var/www"
+              onChange={(e) => setRemoteEdit(e.target.value)}
+              onBlur={() => setRemoteEdit(null)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") {
+                  const next = normalizeRemote(remoteEdit);
+                  setRemoteEdit(null);
+                  goRemote(next);
+                } else if (e.key === "Escape") {
+                  setRemoteEdit(null);
+                }
+              }}
+            />
+          ) : (
+            <div
+              className="fpath crumbs"
+              title="Click to type a path"
+              onClick={(e) => {
+                // Yalnız çubuğun BOŞLUĞUNA tıklayınca yazma kipine geç; crumb'a
+                // tıklamak gezinmeye devam etsin.
+                if (e.target === e.currentTarget) setRemoteEdit(remotePath);
+              }}
+            >
+              <button className="crumb" onClick={() => goRemote("")} title="Home">
+                ~
+              </button>
+              <button className="crumb" onClick={() => goRemote("/")} title="Filesystem root">
+                /
+              </button>
+              {crumbs(remotePath).map((c) => (
+                <span className="crumb-seg" key={c.path}>
+                  <ChevronRight size={16} strokeWidth={1.75} className="crumb-sep" />
+                  <button className="crumb" onClick={() => goRemote(c.path)}>
+                    {c.name}
+                  </button>
+                </span>
+              ))}
+            </div>
+          )}
           <div className="flist">
             {phase === "idle" && (
               <div className="pane-idle">
@@ -555,7 +716,16 @@ export function FilesPanel({ hostId, deferConnect }: { hostId: string; deferConn
               <div className="empty err">
                 <span className="mk" />
                 <span>
-                  Couldn&apos;t read this folder.
+                  {denied(remoteErr) ? (
+                    <>
+                      Permission denied. Portal reads files as{" "}
+                      <b>{host?.username ?? "the user you connected with"}</b>, and that
+                      account can&apos;t open this folder. Connect as a user that can, or
+                      open a terminal here and use <b className="mono">sudo</b>.
+                    </>
+                  ) : (
+                    <>Couldn&apos;t read this folder.</>
+                  )}
                   <span className="raw">{remoteErr}</span>
                 </span>
               </div>
@@ -565,16 +735,9 @@ export function FilesPanel({ hostId, deferConnect }: { hostId: string; deferConn
                 <div
                   key={en.name}
                   className={"frow" + (remoteSel === en.name ? " sel" : "")}
-                  draggable={!en.isDir}
                   onClick={() => setRemoteSel(en.name)}
-                  onContextMenu={(e) => {
-                    e.preventDefault();
-                    e.stopPropagation();
-                    setRemoteSel(en.name);
-                    setMenu({ entry: en, x: e.clientX, y: e.clientY });
-                  }}
-                  onDragStart={(e) =>
-                    dragStart(
+                  onPointerDown={(e) =>
+                    beginDrag(
                       {
                         side: "remote",
                         name: en.name,
@@ -584,7 +747,19 @@ export function FilesPanel({ hostId, deferConnect }: { hostId: string; deferConn
                       e,
                     )
                   }
-                  onDoubleClick={() => en.isDir && openRemoteDir(en.name)}
+                  onContextMenu={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    setRemoteSel(en.name);
+                    setMenu({ entry: en, x: e.clientX, y: e.clientY });
+                  }}
+                  onDoubleClick={() => {
+                    if (en.isDir) {
+                      openRemoteDir(en.name);
+                      return;
+                    }
+                    openRemoteFile(en);
+                  }}
                 >
                   {en.isDir ? (
                     <Folder size={16} strokeWidth={1.75} className="ficon" />
@@ -661,8 +836,10 @@ export function FilesPanel({ hostId, deferConnect }: { hostId: string; deferConn
 
       {hostKey && <HostKeyModal req={hostKey} onDecision={decide} />}
 
-      {/* Uzak sağ-tık menüsü */}
-      {menu && (
+      {/* Uzak sağ-tık menüsü — body'ye portal (bkz. ContextMenu: fixed, transform
+          taşıyan bir atanın içinde tıklanan yerden uzakta çıkıyordu). */}
+      {menu &&
+        createPortal(
         <div
           className="ctx"
           style={{
@@ -712,8 +889,9 @@ export function FilesPanel({ hostId, deferConnect }: { hostId: string; deferConn
           >
             <Trash2 size={16} strokeWidth={1.75} /> Delete
           </button>
-        </div>
-      )}
+        </div>,
+          document.body,
+        )}
 
       {/* İsim dialog'u (yeni klasör / yeniden adlandır) */}
       {nameDlg && (

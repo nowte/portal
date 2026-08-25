@@ -48,6 +48,11 @@ pub enum Error {
     #[error("vault is locked; unlock it first")]
     VaultLocked,
 
+    /// Sır saklanmak istendi ama vault ŞİFRELİ DEĞİL (profil yok → düz metin JSON).
+    /// Sırrı oraya yazmak "diskte düz metin hassas veri yok" iddiasını çiğnerdi.
+    #[error("Set up a profile password before Portal can remember credentials.")]
+    SecretsNeedEncryptedVault,
+
     /// SSH anahtar işlemi hatası (üret/oku/şifrele). Kullanıcıya dönük → İngilizce.
     #[error("{0}")]
     Key(String),

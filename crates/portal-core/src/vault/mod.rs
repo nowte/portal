@@ -21,7 +21,7 @@ use serde::{Deserialize, Serialize};
 use zeroize::Zeroizing;
 
 use crate::error::Result;
-use crate::model::{Folder, Host, Identity, Monitor, Snippet};
+use crate::model::{Folder, Host, Identity, Monitor, Snippet, StoredSecret};
 use crate::persist;
 use crypto::{OpenKey, SealKey, VaultCipher};
 
@@ -43,6 +43,10 @@ pub struct Vault {
     pub snippets: Vec<Snippet>,
     /// Uptime monitörleri (site/port kontrolleri).
     pub monitors: Vec<Monitor>,
+    /// Host başına saklanan bağlanma sırları ("Remember" işaretliyse).
+    /// `default`: eski vault'lar bu alan olmadan da açılır.
+    #[serde(default)]
+    pub secrets: Vec<StoredSecret>,
 }
 
 impl Vault {
@@ -173,6 +177,7 @@ mod tests {
             },
         );
         monitor.host_id = Some(host.id);
+        let host_id_for_secret = host.id;
 
         Vault {
             folders: vec![folder],
@@ -180,6 +185,11 @@ mod tests {
             hosts: vec![host],
             snippets: vec![snippet],
             monitors: vec![monitor],
+            secrets: vec![StoredSecret {
+                host_id: host_id_for_secret,
+                key_path: None,
+                secret: "sample-secret".into(),
+            }],
         }
     }
 

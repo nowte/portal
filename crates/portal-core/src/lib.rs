@@ -37,7 +37,7 @@ pub use metrics::{Metrics, MetricsEvent, MetricsSession};
 pub use model::{
     AuthMethod, Folder, FolderId, Host, HostId, Identity, IdentityId, Monitor, MonitorId,
     MonitorTarget, Profile, ProfileId, Session, SessionId, SessionView, Snippet, SnippetId,
-    DEFAULT_SSH_PORT,
+    StoredSecret, DEFAULT_SSH_PORT,
 };
 pub use paths::Paths;
 pub use persist::write_secure_temp;

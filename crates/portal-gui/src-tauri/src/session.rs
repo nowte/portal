@@ -45,6 +45,10 @@ pub enum GuiCmd {
     RemoveFile(String),
     /// SFTP: uzak (boş) dizini sil.
     RemoveDir(String),
+    /// SFTP: uzak dosyayı oku (gömülü editör).
+    ReadRemote(String),
+    /// SFTP: uzak dosyayı yaz (gömülü editör kaydı).
+    WriteRemote { path: String, bytes: Vec<u8> },
     /// Oturumu kapat (thread biter).
     Close,
 }
@@ -114,7 +118,11 @@ enum ShellMsg {
     },
 }
 
+// ⚠️ camelCase ŞART: TS tarafı `isDir`/`isSymlink` okuyor (lib/types.ts RemoteEntry).
+// Bu satır olmadan alanlar `is_dir` olarak gider, `en.isDir` undefined kalır ve
+// UZAK PANELDE HER KLASÖR DOSYA GİBİ görünür (girilemez, sıralaması bozulur).
 #[derive(Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
 struct EntryDto {
     name: String,
     is_dir: bool,
@@ -160,6 +168,20 @@ enum SftpMsg {
     },
     TransferCancelled {
         id: u64,
+    },
+    /// Gömülü editör: dosya içeriği (metin olarak çözüldü).
+    RemoteContent {
+        path: String,
+        text: String,
+    },
+    /// Gömülü editör: dosya açılamadı (ikili içerik vb.) — liste hatası DEĞİL.
+    EditError {
+        path: String,
+        message: String,
+    },
+    /// Gömülü editör: kayıt tamam.
+    WriteDone {
+        path: String,
     },
     Error {
         message: String,
@@ -331,6 +353,24 @@ pub fn spawn_files(app: AppHandle, id: u64, session: SftpSession, cmd_rx: Receiv
                     SftpEvent::ListError { path, message } => {
                         emit(&app, &channel, SftpMsg::ListError { path, message });
                     }
+                    // İkili dosya editöre GİRMEZ: UTF-8 çözülemezse açılmaz. Boyut
+                    // sınırı yüzeyde (listedeki `size`) — dosya buraya gelmeden elenir.
+                    SftpEvent::RemoteContent { path, bytes } => match String::from_utf8(bytes) {
+                        Ok(text) => emit(&app, &channel, SftpMsg::RemoteContent { path, text }),
+                        Err(_) => emit(
+                            &app,
+                            &channel,
+                            SftpMsg::EditError {
+                                path,
+                                message:
+                                    "This file isn't text (invalid UTF-8). Download it instead."
+                                        .into(),
+                            },
+                        ),
+                    },
+                    SftpEvent::WriteDone { path } => {
+                        emit(&app, &channel, SftpMsg::WriteDone { path });
+                    }
                     SftpEvent::TransferQueued {
                         id: tid,
                         kind,
@@ -370,8 +410,6 @@ pub fn spawn_files(app: AppHandle, id: u64, session: SftpSession, cmd_rx: Receiv
                     SftpEvent::TransferCancelled { id: tid } => {
                         emit(&app, &channel, SftpMsg::TransferCancelled { id: tid });
                     }
-                    // Yerinde uzak-düzenleme GUI'de henüz yok (P6-C/ileri) → yok say.
-                    SftpEvent::RemoteContent { .. } | SftpEvent::WriteDone { .. } => {}
                     SftpEvent::Error(message) => emit(&app, &channel, SftpMsg::Error { message }),
                 }
             }
@@ -384,6 +422,8 @@ pub fn spawn_files(app: AppHandle, id: u64, session: SftpSession, cmd_rx: Receiv
                 Ok(GuiCmd::Rename { from, to }) => session.rename(from, to),
                 Ok(GuiCmd::RemoveFile(path)) => session.remove_file(path),
                 Ok(GuiCmd::RemoveDir(path)) => session.remove_dir(path),
+                Ok(GuiCmd::ReadRemote(path)) => session.read_remote(&path),
+                Ok(GuiCmd::WriteRemote { path, bytes }) => session.write_remote(path, bytes),
                 Ok(GuiCmd::HostKey(accept)) => {
                     if let Some(r) = pending_hk.take() {
                         r.respond(accept);

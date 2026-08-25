@@ -30,6 +30,7 @@ import { GatewayPanel } from "../panels/GatewayPanel";
 import { TerminalPanel } from "../panels/TerminalPanel";
 import { FilesPanel } from "../panels/FilesPanel";
 import { MonitorPanel } from "../panels/MonitorPanel";
+import { EditorPanel } from "../panels/EditorPanel";
 
 // `restored`: düzen DİSKTEN geri yüklendiğinde true. Oturum pane'leri o zaman
 // kendiliğinden bağlanmaz (açılışta parola diyaloğu yağmasın) — bkz. deferConnect.
@@ -49,6 +50,14 @@ const nestedComponents: Record<string, React.FunctionComponent<IDockviewPanelPro
   ),
   monitor: (p: IDockviewPanelProps) => (
     <MonitorPanel hostId={p.params.hostId as string} deferConnect={p.params.restored === true} />
+  ),
+  editor: (p: IDockviewPanelProps) => (
+    <EditorPanel
+      hostId={p.params.hostId as string}
+      sessionId={p.params.sessionId as number}
+      path={p.params.path as string}
+      panelId={p.api.id}
+    />
   ),
 };
 

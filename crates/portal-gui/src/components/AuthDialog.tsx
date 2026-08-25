@@ -4,8 +4,9 @@
 // requestAuth(host) → Promise<Auth | null>. null = kullanıcı iptal etti.
 
 import { useEffect, useState } from "react";
-import { KeyRound, Lock, X } from "lucide-react";
+import { Check, KeyRound, Lock, X } from "lucide-react";
 import type { Auth, Host } from "../lib/types";
+import { usePortal } from "../context";
 
 let resolver: ((a: Auth | null) => void) | null = null;
 let opener: ((host: Host) => void) | null = null;
@@ -25,11 +26,15 @@ export function requestAuth(host: Host): Promise<Auth | null> {
 }
 
 export function AuthDialog() {
+  // Şifresiz (profilsiz) vault'ta sır saklanamaz — çekirdek reddeder. Anahtarı
+  // göstermek yerine NEDENİNİ söyle: kullanıcı sessiz bir başarısızlıkla karşılaşmasın.
+  const { canRemember } = usePortal();
   const [host, setHost] = useState<Host | null>(null);
   const [kind, setKind] = useState<"password" | "key">("password");
   const [password, setPassword] = useState("");
   const [path, setPath] = useState("");
   const [passphrase, setPassphrase] = useState("");
+  const [remember, setRemember] = useState(false);
 
   useEffect(() => {
     opener = (h) => {
@@ -37,6 +42,7 @@ export function AuthDialog() {
       setPassword("");
       setPath("");
       setPassphrase("");
+      setRemember(false); // her diyalog kapalı başlar — sessizce saklamak yok
       setHost(h);
     };
     return () => {
@@ -64,8 +70,9 @@ export function AuthDialog() {
   if (!host) return null;
 
   const submit = () => {
-    if (kind === "password") finish({ kind: "password", password });
-    else finish({ kind: "key", path, passphrase: passphrase || undefined });
+    const keep = remember && canRemember;
+    if (kind === "password") finish({ kind: "password", password, remember: keep });
+    else finish({ kind: "key", path, passphrase: passphrase || undefined, remember: keep });
   };
 
   const who = host.username ? `${host.username}@${host.address}` : host.address;
@@ -107,7 +114,11 @@ export function AuthDialog() {
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 onKeyDown={(e) => e.key === "Enter" && submit()}
-                placeholder="Never stored — asked each session"
+                placeholder={
+                  remember && canRemember
+                    ? "Saved to your encrypted vault"
+                    : "Never stored — asked each session"
+                }
               />
             </span>
           </label>
@@ -133,11 +144,47 @@ export function AuthDialog() {
                   value={passphrase}
                   onChange={(e) => setPassphrase(e.target.value)}
                   onKeyDown={(e) => e.key === "Enter" && submit()}
-                  placeholder="Leave empty if the key has none"
+                  placeholder={
+                  remember && canRemember
+                    ? "Saved to your encrypted vault (leave empty if none)"
+                    : "Leave empty if the key has none"
+                }
                 />
               </span>
             </label>
           </>
+        )}
+
+        <button
+          className={"hf-check lit" + (remember ? " on" : "")}
+          onClick={() => canRemember && setRemember(!remember)}
+          disabled={!canRemember}
+          title={
+            canRemember
+              ? "Store this in your encrypted vault so Portal stops asking."
+              : "Needs an encrypted vault — set up a profile password first."
+          }
+        >
+          <span className="hf-box">
+            <Check size={16} strokeWidth={3} />
+          </span>
+          <span>
+            Remember for this server — <b>don&apos;t ask again</b>
+          </span>
+        </button>
+        {!canRemember && (
+          <div className="dlg-note">
+            Portal can only remember credentials in an <b>encrypted</b> vault. This
+            profile has no password, so the vault is plain text and secrets would sit
+            unprotected on disk. Add a profile password in Settings ▸ Profiles first.
+          </div>
+        )}
+        {remember && canRemember && (
+          <div className="dlg-note">
+            Kept in your encrypted vault, never in plain text. Anyone who can unlock that
+            vault — or use this computer, if the vault opens without a password — can
+            connect as you. Turn it off any time from the server&apos;s menu.
+          </div>
         )}
 
         </div>

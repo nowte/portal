@@ -522,6 +522,28 @@ export function openFiles(hostId: string, title: string): void {
   withServerDock(hostId, title, (dock) => addPane(dock, id, "files", "Files", hostId, { hostId }));
 }
 
+/** Sunucu sayfasında uzak bir metin dosyası için editör pane'i.
+ *  SFTP oturumunu AÇAN Files paneliyle paylaşır (ikinci bağlantı açmaz) — bu yüzden
+ *  `sessionId` parametre olarak geçer. Aynı dosya iki kez açılmaz (id yola bağlı). */
+export function openEditor(hostId: string, title: string, sessionId: number, path: string): void {
+  const id = `edit:${sessionId}:${path}`;
+  withServerDock(hostId, title, (dock) =>
+    addPane(dock, id, "editor", baseNameOf(path), hostId, { hostId, sessionId, path }),
+  );
+}
+
+/** Bir pane'i yüzen gruba taşır (editörü ekranda serbest gezdirmek için). */
+export function floatPane(hostId: string, panelId: string): void {
+  const dock = serverApis.get(hostId);
+  const panel = dock?.getPanel(panelId);
+  if (dock && panel) dock.addFloatingGroup(panel);
+}
+
+function baseNameOf(path: string): string {
+  const parts = path.split("/").filter(Boolean);
+  return parts.length ? parts[parts.length - 1] : path;
+}
+
 /** Sunucu sayfasında Monitor pane'i. */
 export function openMonitor(hostId: string, title: string): void {
   recordActivity(hostId, "monitor");

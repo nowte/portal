@@ -16,7 +16,7 @@ use std::path::{Path, PathBuf};
 
 use crate::model::{
     AuthMethod, Folder, FolderId, Host, HostId, Identity, IdentityId, Monitor, MonitorId, Profile,
-    ProfileId, Snippet, SnippetId,
+    ProfileId, Snippet, SnippetId, StoredSecret,
 };
 use crate::paths::Paths;
 use crate::ssh_config::ImportedHost;
@@ -643,6 +643,70 @@ impl Store {
     pub fn remove_host(&mut self, id: HostId) -> Result<()> {
         self.vault.hosts.retain(|h| h.id != id);
         self.vault.snippets.retain(|s| s.host_id != Some(id));
+        // Host gidince sırrı da gitmeli — yetim sır vault'ta kalmasın.
+        self.vault.secrets.retain(|s| s.host_id != id);
+        self.save_vault()
+    }
+
+    // ── Saklanan bağlanma sırları ────────────────────────────────────────────
+    //
+    // Sır YALNIZCA kullanıcı "Remember" derse yazılır ve yalnızca şifreli vault'ta
+    // yaşar. Okuma `&str` döndürür (kopya çıkarmamak için); çağıran kopyalarsa
+    // kopyayı kendisi zeroize eder.
+
+    /// Bu host için saklanmış sır kaydı (yoksa `None`).
+    #[must_use]
+    pub fn host_secret(&self, host_id: HostId) -> Option<&StoredSecret> {
+        self.vault.secrets.iter().find(|s| s.host_id == host_id)
+    }
+
+    /// Vault şu an ŞİFRELİ mi yazılıyor? (profil + cipher varsa evet)
+    ///
+    /// Profilsiz "sürtünmesiz mod"da vault düz metin JSON'dır — oraya sır YAZILMAZ.
+    #[must_use]
+    pub fn vault_is_encrypted(&self) -> bool {
+        self.cipher.is_some() && self.config.active_profile.is_some()
+    }
+
+    /// Host için sırrı saklar (varsa üzerine yazar) ve vault'u diske yazar.
+    ///
+    /// # Errors
+    /// Vault şifreli değilse [`Error::SecretsNeedEncryptedVault`]; yazma başarısız
+    /// olursa ilgili I/O hatası döner.
+    pub fn set_host_secret(
+        &mut self,
+        host_id: HostId,
+        key_path: Option<std::path::PathBuf>,
+        secret: String,
+    ) -> Result<()> {
+        // Kapı burada: şifresiz vault'a sır yazmak, ürünün tek sert vaadini çiğner.
+        if !self.vault_is_encrypted() {
+            return Err(Error::SecretsNeedEncryptedVault);
+        }
+        match self.vault.secrets.iter_mut().find(|s| s.host_id == host_id) {
+            Some(existing) => {
+                existing.key_path = key_path;
+                existing.secret = secret;
+            }
+            None => self.vault.secrets.push(StoredSecret {
+                host_id,
+                key_path,
+                secret,
+            }),
+        }
+        self.save_vault()
+    }
+
+    /// Host'un saklanmış sırrını siler (kullanıcı "unutt" derse ya da kimlik reddedilirse).
+    ///
+    /// # Errors
+    /// Vault yazılamazsa hata döner.
+    pub fn clear_host_secret(&mut self, host_id: HostId) -> Result<()> {
+        let before = self.vault.secrets.len();
+        self.vault.secrets.retain(|s| s.host_id != host_id);
+        if self.vault.secrets.len() == before {
+            return Ok(()); // yoktu; diske gereksiz yazma
+        }
         self.save_vault()
     }
 
@@ -756,6 +820,18 @@ mod tests {
         (dir, store)
     }
 
+    /// Parolalı profil kurulmuş (yani ŞİFRELİ) bir store — sır saklama testleri için.
+    fn encrypted_store() -> (tempfile::TempDir, Store) {
+        let dir = tempdir().unwrap();
+        let paths = Paths::new(dir.path().join("config"), dir.path().join("data"));
+        let mut store = open_mem(&paths, MemoryKeyStore::new());
+        store
+            .complete_onboarding(Theme::Black, Some("work"), Some("s3cret"))
+            .unwrap();
+        assert!(store.vault_is_encrypted());
+        (dir, store)
+    }
+
     #[test]
     fn add_host_persists_across_reopen() {
         let dir = tempdir().unwrap();
@@ -786,6 +862,71 @@ mod tests {
         assert_eq!(store.hosts().len(), 1);
         assert_eq!(store.host(id).unwrap().label, "web-renamed");
         assert_eq!(store.host(id).unwrap().port, 2222);
+    }
+
+    #[test]
+    fn plain_text_vault_refuses_to_store_secrets() {
+        // Profilsiz mod = düz metin vault. Sır oraya ASLA yazılmaz.
+        let (_dir, mut store) = temp_store();
+        let id = store.add_host(Host::new("web", "10.0.0.1")).unwrap();
+        assert!(!store.vault_is_encrypted());
+        let err = store.set_host_secret(id, None, "hunter2".into());
+        assert!(matches!(err, Err(Error::SecretsNeedEncryptedVault)));
+        assert!(store.host_secret(id).is_none());
+    }
+
+    #[test]
+    fn stored_secret_round_trips_and_survives_reload() {
+        let (_dir, mut store) = encrypted_store();
+        let id = store.add_host(Host::new("web", "10.0.0.1")).unwrap();
+
+        // Parola yöntemi: key_path yok.
+        store.set_host_secret(id, None, "hunter2".into()).unwrap();
+        let got = store.host_secret(id).expect("sır kaydedilmeliydi");
+        assert_eq!(got.secret, "hunter2");
+        assert!(got.key_path.is_none());
+
+        // Üzerine yazma: anahtar yöntemine geç.
+        let key = std::path::PathBuf::from("/home/a/.ssh/id_ed25519");
+        store
+            .set_host_secret(id, Some(key.clone()), "pp".into())
+            .unwrap();
+        let got = store.host_secret(id).unwrap();
+        assert_eq!(got.key_path.as_ref(), Some(&key));
+        assert_eq!(got.secret, "pp");
+
+        // Unut: gerçekten gitmeli (yoksa bir sonraki bağlanmada sessizce kullanılır).
+        store.clear_host_secret(id).unwrap();
+        assert!(store.host_secret(id).is_none());
+        // İkinci kez çağırmak hata vermemeli (yoktu → no-op).
+        store.clear_host_secret(id).unwrap();
+    }
+
+    #[test]
+    fn removing_a_host_drops_its_stored_secret() {
+        let (_dir, mut store) = encrypted_store();
+        let id = store.add_host(Host::new("web", "10.0.0.1")).unwrap();
+        store.set_host_secret(id, None, "hunter2".into()).unwrap();
+
+        store.remove_host(id).unwrap();
+        assert!(store.host_secret(id).is_none(), "yetim sır vault'ta kaldı");
+    }
+
+    #[test]
+    fn secret_is_not_plain_text_on_disk() {
+        // "Diskte düz metin sır yok" iddiasının testi — vault şifreli yazılmalı.
+        let (dir, mut store) = encrypted_store();
+        let id = store.add_host(Host::new("web", "203.0.113.77")).unwrap();
+        store
+            .set_host_secret(id, None, "correct-horse-battery".into())
+            .unwrap();
+
+        let bytes = std::fs::read(dir.path().join("data").join("vault.portal")).unwrap_or_default();
+        let text = String::from_utf8_lossy(&bytes);
+        assert!(
+            !text.contains("correct-horse-battery"),
+            "sır düz metin sızdı"
+        );
     }
 
     #[test]

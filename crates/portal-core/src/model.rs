@@ -7,6 +7,7 @@
 
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
+use zeroize::{Zeroize, ZeroizeOnDrop};
 
 /// SSH varsayılan portu.
 pub const DEFAULT_SSH_PORT: u16 = 22;
@@ -186,6 +187,29 @@ pub enum AuthMethod {
     },
     /// Şifre doğrulama. Şifrenin kendisi vault'tadır.
     Password,
+}
+
+/// Bir host için SAKLANAN bağlanma sırrı (parola ya da anahtar passphrase'i).
+///
+/// Yalnızca kullanıcı açıkça "Remember" derse yazılır ve **yalnızca şifreli vault'ta**
+/// yaşar — `config.toml`'da ya da düz metin hiçbir yerde durmaz. `AuthMethod`
+/// yorumlarının baştan beri söylediği "sır vault'tadır" ifadesinin karşılığı budur.
+///
+/// ⚠️ Vault parolasız (OS keyring) açılıyorsa, makineye erişen biri bu sırra da
+/// erişir. Arayüz bunu anahtarın yanında AÇIKÇA söyler.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Zeroize, ZeroizeOnDrop)]
+pub struct StoredSecret {
+    /// Hangi host'a ait.
+    #[zeroize(skip)]
+    pub host_id: HostId,
+    /// Anahtar dosyası yolu. `Some` ise yöntem key-file, `None` ise paroladır.
+    /// Yol SIR DEĞİLDİR (bkz. ARCHITECTURE §5) ama yöntemi o belirler — sırrın
+    /// yanında durması, bağlanırken kimliğe ikinci bir sorgu gerektirmemesi içindir.
+    #[zeroize(skip)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub key_path: Option<std::path::PathBuf>,
+    /// Parola ya da passphrase. Boş = passphrase'siz anahtar. Düşerken sıfırlanır.
+    pub secret: String,
 }
 
 /// Host'ların referans verdiği kimlik doğrulama kaydı.

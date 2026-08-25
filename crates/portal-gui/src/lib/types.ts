@@ -31,6 +31,8 @@ export interface Bootstrap {
   device_label: string;
   // Pencere kapatılınca tepsiye insin mi (Settings ▸ Appearance ▸ Window).
   minimize_to_tray: boolean;
+  // Vault şifreli mi → kimlik "hatırlanabilir" mi (profilsiz modda vault düz metin).
+  can_remember: boolean;
   hosts: Host[];
   folders: Folder[];
 }
@@ -122,10 +124,11 @@ export interface SyncResult {
   locked: boolean;
 }
 
-// Bağlanma-anı kimliği (sır asla diske yazılmaz).
+// Bağlanma-anı kimliği. `remember` YOKSA sır yalnız bellekte kalır (uygulama
+// kapanınca gider). `remember: true` ise ŞİFRELİ VAULT'a yazılır — başka hiçbir yere.
 export type Auth =
-  | { kind: "password"; password: string }
-  | { kind: "key"; path: string; passphrase?: string };
+  | { kind: "password"; password: string; remember?: boolean }
+  | { kind: "key"; path: string; passphrase?: string; remember?: boolean };
 
 // ── SFTP / yerel dosya ─────────────────────────────────
 export interface RemoteEntry {
@@ -164,6 +167,9 @@ export type SftpMsg =
   | { type: "transferDone"; id: number }
   | { type: "transferFailed"; id: number; message: string }
   | { type: "transferCancelled"; id: number }
+  | { type: "remoteContent"; path: string; text: string }
+  | { type: "editError"; path: string; message: string }
+  | { type: "writeDone"; path: string }
   | { type: "error"; message: string };
 
 export interface ProcInfo {

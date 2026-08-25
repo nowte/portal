@@ -269,6 +269,33 @@ input, textarea, select { font: inherit; }
 /* §10 — odak halkası elemanın yarıçapını DEĞİŞTİRMEZ (v0.5'te eziyordu). */
 :focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
 
+/* ⚠️ Ama çıplak `input` KÖŞESİ KESKİNDİR. Yuvarlak bir kutunun (arama alanı, form
+   sarmalayıcısı) içinde otururken halka o keskin dikdörtgeni takip ediyor ve
+   kutunun dışına BEYAZ KÖŞELER olarak taşıyordu (kullanıcı bulgusu). Halkayı
+   input'tan alıp KUTUYA taşı: görünür odak korunur (§10), köşe taşması biter. */
+.search input:focus-visible,
+.sin input:focus-visible,
+.pal-in input:focus-visible,
+.fwrap input:focus-visible,
+.fwrap textarea:focus-visible,
+.fpath-edit:focus-visible {
+  outline: none;
+}
+.search:has(input:focus-visible),
+.sin:has(input:focus-visible),
+.pal-in:has(input:focus-visible),
+.fwrap:has(input:focus-visible),
+.fwrap:has(textarea:focus-visible) {
+  outline: 2px solid var(--primary);
+  outline-offset: 2px;
+}
+/* Yol kutusu kendi başına yuvarlak → halkayı kendi yarıçapıyla alır. */
+.fpath-edit:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 2px;
+  border-radius: var(--r-s);
+}
+
 /* ── Yüzey yardımcısı ─────────────────────────────────────────────────────
    Işık kenarı modeli kaldırıldı: yüzeyler artık yalnız ZEMİN KADEMESİYLE
    ayrışır (--surface → --panel → --panel-2). Ne kenarlık var ne ışık.
@@ -1193,6 +1220,10 @@ input, textarea, select { font: inherit; }
    İŞARET aynı. Önceden burada elle yazılmış bir `×` karakteri vardı. */
 .tab-x {
   width: 20px; height: 20px; border-radius: var(--r-s); flex: none;
+  /* ⚠️ padding: 0 ŞART. Global `button` kuralı 1px/6px dolgu veriyor; border-box'ta
+     içerik kutusu 20-12=8px'e düşüyor ve 16px'lik simge grid ortalamasında sağa
+     taşıyordu → hover zemini simgenin 4px SOLUNDA duruyordu (kullanıcı bulgusu). */
+  padding: 0;
   display: grid; place-items: center;
   color: var(--faint);
   transition: transform var(--dur-press) var(--ease-out),
@@ -1255,10 +1286,10 @@ input, textarea, select { font: inherit; }
   border-radius: 0 0 var(--r-m) var(--r-m);
   overflow: hidden;
 }
-.dv-dragging .dv-render-overlay {
-  transform: scale(0.99) !important;
-  opacity: 0.85;
-}
+/* ⛔ Sürükleme sırasında panele transform/opacity VERME. `scale(0.99)` bütün
+   içeriği kıpırdatıyor ve "ekran küçülüyor" gibi görünüyordu (kullanıcı bulgusu).
+   Sürükleme geri bildirimi zaten iki yerden geliyor: sekme hayaleti
+   (.dv-tab-ghost-drag) ve dockview'ün drop göstergesi. Üçüncüsü gereksiz. */
 
 /* Sürüklenen sekmenin hayaleti: yüzeyden kopmuş görünsün. */
 .dv-tab-ghost-drag {
@@ -1465,6 +1496,13 @@ input, textarea, select { font: inherit; }
 }
 .hf-toggle:active, .hf-check:active { transform: scale(0.99); }
 .hf-toggle b { color: var(--text); font-family: var(--mono); font-weight: 400; }
+/* Bir anahtarın SONUCUNU açıklayan not (yalnız anahtar açıkken görünür).
+   Uyarı değil bilgi: kırmızı yok, sönük metin. */
+.dlg-note {
+  margin-top: var(--sp-2); padding: var(--sp-2) var(--sp-3);
+  background: var(--panel); border-radius: var(--r-s);
+  font-size: var(--fs-2); line-height: 1.5; color: var(--dim);
+}
 .hf-check b { color: var(--text); font-weight: 600; }
 .hf-check.on { color: var(--text); }
 /* §6 yarıçap 8/10/14 · §8 ikon 16/20. Tik `scale()` ile gelmiyor (ölçülen
@@ -1976,6 +2014,12 @@ input, textarea, select { font: inherit; }
   padding: var(--sp-2); gap: var(--sp-2); height: 100%; background: var(--surface);
 }
 .files-panes { flex: 1; min-height: 0; display: flex; gap: var(--sp-2); align-items: stretch; }
+/* Geçici uyarı şeridi (bırakma reddedildi, dosya editör için çok büyük…). */
+.files-note {
+  flex: none; display: flex; align-items: center; gap: var(--sp-2);
+  padding: var(--sp-2); background: var(--panel); border-radius: var(--r-s);
+}
+.files-note .err { flex: 1; min-width: 0; }
 
 .fpane {
   position: relative; flex: 1; min-width: 0; min-height: 0;
@@ -1984,7 +2028,18 @@ input, textarea, select { font: inherit; }
   transition: background-color var(--dur-hover) var(--ease-out);
 }
 .fpane.drop { background: var(--panel-2); }
-.fpane.drop::after {
+/* İmleç GERÇEKTEN bu panelin üstündeyken: "Drop to transfer" şeridi çıksın. */
+.fpane.over { background: var(--panel-2); }
+/* Sürükleme hayaleti — imleci izler, isabet testine KARIŞMAZ (pointer-events:none;
+   yoksa `elementFromPoint` hep hayaleti bulur ve hedef panel asla saptanamaz). */
+.dragghost {
+  position: fixed; z-index: 90; pointer-events: none;
+  padding: var(--sp-1) var(--sp-2); border-radius: var(--r-s);
+  background: var(--primary); color: var(--on-primary);
+  font-size: var(--fs-2); font-weight: 600; box-shadow: var(--shadow-pop);
+  max-width: 260px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.fpane.over::after {
   content: "Drop to transfer"; position: absolute; inset: auto 0 0 0;
   padding: var(--sp-2); text-align: center; font-size: var(--fs-2); font-weight: 600;
   color: var(--on-primary); background: var(--primary); z-index: 4;
@@ -2019,6 +2074,21 @@ input, textarea, select { font: inherit; }
   flex: 1; min-width: 0; background: none; border: none;
   color: var(--text); font-family: var(--mono); font-size: var(--fs-2);
 }
+/* ⚠️ `.fpath-edit` SATIR İÇİ kullanım için yazıldı (`.fpath` bir SATIR flex kabı,
+   orada `flex:1` = "genişliği doldur"). Ama iki sınıf AYNI elemanda kullanılınca
+   (`class="fpath fpath-edit"`) eleman artık DİKEY kabın (.fpane) çocuğu oluyor ve
+   `flex:1` "yüksekliği doldur"a dönüşüyordu → yol kutusu 30px yerine ~206px,
+   dosya listesi 180px aşağı kayıyordu. Yol çubuğu asla büyümez. */
+.fpath.fpath-edit { flex: none; }
+
+/* Hata metninin altındaki HAM sunucu çıktısı. Kuralı hiç yoktu → cümleye bitişik
+   yazılıyordu ("…on this server.Connect cancelled."). Kendi satırında, mono ve
+   sönük: okunacak metin değil, kanıt. */
+.raw {
+  display: block; margin-top: var(--sp-1);
+  font-family: var(--mono); font-size: var(--fs-2); color: var(--dim);
+  word-break: break-word;
+}
 .fpath-edit::placeholder { color: var(--faint); }
 .crumbs { gap: 2px; overflow-x: auto; }
 .crumbs::-webkit-scrollbar { height: 0; }
@@ -2037,12 +2107,16 @@ input, textarea, select { font: inherit; }
 .frow {
   position: relative; display: flex; align-items: center; gap: var(--sp-2);
   height: 30px; padding: var(--sp-1) var(--sp-2); border-radius: var(--r-s);
-  cursor: default; user-select: none;
+  /* Satır tıklanır (seç) ve çift tıklanır (aç) — imleç bunu söylemeli.
+     `default` iken satır "okunacak metin" gibi duruyordu (kullanıcı bulgusu). */
+  cursor: pointer; user-select: none;
   transition: background-color var(--dur-hover) var(--ease-out),
     opacity var(--dur-hover) var(--ease-out);
 }
-/* Hover bir kademe altta kalır: seçili satır (--panel-2) ondan ayrışsın. */
-@media (hover: hover) and (pointer: fine) { .frow:hover { background: var(--panel); } }
+/* ⚠️ Hover `--panel` OLAMAZ: `.frow` zaten `--panel` zeminli `.fpane` içinde durur,
+   yani hover GÖRÜNMEZDİ (kullanıcı bulgusu: "üzerine gelince rengi açılsın").
+   `.hostrow` ile aynı kural ama farklı kapta → farklı sonuç. Bir kademe yukarı. */
+@media (hover: hover) and (pointer: fine) { .frow:hover { background: var(--panel-2); } }
 .frow.sel { background: var(--panel-2); }
 .frow.dragging { opacity: 0.5; }
 .frow[draggable="true"] { cursor: grab; }
@@ -2053,6 +2127,36 @@ input, textarea, select { font: inherit; }
 .fsize { font-family: var(--mono); font-size: var(--fs-2); color: var(--dim); flex: none; font-variant-numeric: tabular-nums; }
 
 /* Orta aktarma sütunu */
+/* ── Gömülü editör (uzak metin dosyası) ───────────────────────────────────
+   Terminal gibi ayrı bir dünya DEĞİL: panel yüzeyinde durur, form dilini kullanır.
+   Yazı alanı `--mono` (veri/kod), kenarlık yok — yüzey kademesiyle ayrışır (§1). */
+.edt {
+  flex: 1; min-height: 0; display: flex; flex-direction: column;
+  padding: var(--sp-2); gap: var(--sp-2); height: 100%; background: var(--surface);
+}
+.edt-head { flex: none; display: flex; align-items: center; gap: var(--sp-2); }
+/* Birincil eylem yan komşusundan ayrı dursun (yanlış düğmeye basma riski). */
+.edt-head .btn-primary { margin-left: var(--sp-2); }
+.edt-path {
+  flex: 1; min-width: 0; font-size: var(--fs-2); color: var(--dim);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; direction: rtl;
+  text-align: left;
+}
+/* Kaydedilmemiş değişiklik: 8px nokta (§9 — renk tek taşıyıcı değil, konum da anlam
+   taşıyor: nokta yalnız kirliyken VAR, temizken hiç render edilmez). */
+.edt-dot {
+  flex: none; width: 8px; height: 8px; border-radius: 50%;
+  background: var(--amber); box-shadow: 0 0 0 1px var(--panel-2);
+}
+.edt-area {
+  flex: 1; min-height: 0; width: 100%; resize: none;
+  background: var(--panel); color: var(--text);
+  border: none; border-radius: var(--r-s); padding: var(--sp-3);
+  font-family: var(--mono); font-size: var(--fs-3); line-height: 1.55;
+  tab-size: 2;
+}
+.edt-area:focus { outline: none; background: var(--panel-2); }
+
 .files-mid {
   flex: none; width: 44px; display: flex; flex-direction: column;
   align-items: center; justify-content: center; gap: var(--sp-2);

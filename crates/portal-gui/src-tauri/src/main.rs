@@ -61,22 +61,62 @@ impl AppState {
                 .ok_or("That server no longer exists.")?
                 .clone()
         };
+        // Kimlik üç yerden gelebilir, bu sırayla:
+        //   1. kullanıcının şimdi girdiği (varsa "Remember" ile vault'a da yazılır)
+        //   2. bellek önbelleği (aynı oturum içinde tekrar sormamak için)
+        //   3. şifreli vault (kullanıcı daha önce "Remember" dediyse)
+        // Üçü de yoksa çağıran kimlik ister.
         let choice = match auth {
             Some(a) => {
+                let remember = a.remember;
                 let ac = to_auth(a)?;
                 self.cached_creds
                     .lock()
                     .map_err(|_| "cred cache poisoned".to_string())?
                     .insert(host_id, ac.clone());
+                if remember {
+                    let (key_path, secret) = match &ac {
+                        AuthChoice::Password(p) => (None, p.to_string()),
+                        AuthChoice::KeyFile { path, passphrase } => {
+                            (Some(path.clone()), passphrase.clone().unwrap_or_default())
+                        }
+                    };
+                    self.lock()?
+                        .set_host_secret(host_id, key_path, secret)
+                        .map_err(|e| e.to_string())?;
+                }
                 ac
             }
-            None => self
-                .cached_creds
-                .lock()
-                .map_err(|_| "cred cache poisoned".to_string())?
-                .get(&host_id)
-                .cloned()
-                .ok_or("Enter credentials to connect.")?,
+            None => {
+                let cached = self
+                    .cached_creds
+                    .lock()
+                    .map_err(|_| "cred cache poisoned".to_string())?
+                    .get(&host_id)
+                    .cloned();
+                match cached {
+                    Some(ac) => ac,
+                    None => {
+                        let stored = self.lock()?.host_secret(host_id).cloned();
+                        let ac = stored
+                            .map(|s| match s.key_path.clone() {
+                                Some(path) => AuthChoice::KeyFile {
+                                    path,
+                                    passphrase: Some(s.secret.clone()).filter(|p| !p.is_empty()),
+                                },
+                                None => AuthChoice::Password(s.secret.clone()),
+                            })
+                            .ok_or("Enter credentials to connect.")?;
+                        // Vault'tan geldiyse belleğe de al: aynı oturumda tekrar
+                        // vault'a inmeyelim.
+                        self.cached_creds
+                            .lock()
+                            .map_err(|_| "cred cache poisoned".to_string())?
+                            .insert(host_id, ac.clone());
+                        ac
+                    }
+                }
+            }
         };
         let endpoint = session::endpoint_for(&host, choice, self.known_hosts.clone());
         Ok((endpoint, host))
@@ -171,6 +211,9 @@ struct AuthInput {
     password: Option<String>,
     path: Option<String>,
     passphrase: Option<String>,
+    /// Kullanıcı "Remember" dedi mi → sır ŞİFRELİ VAULT'a yazılır (yalnız o zaman).
+    #[serde(default)]
+    remember: bool,
 }
 
 fn to_auth(a: AuthInput) -> Result<AuthChoice, String> {
@@ -204,6 +247,9 @@ struct Bootstrap {
     device_label: String,
     /// Pencere kapatılınca tepsiye insin mi (Settings ▸ Appearance ▸ Window).
     minimize_to_tray: bool,
+    /// Vault ŞİFRELİ mi → "Remember" sunulabilir mi. Profilsiz modda vault düz
+    /// metin JSON'dır ve sır oraya yazılmaz (core reddeder).
+    can_remember: bool,
     hosts: Vec<Host>,
     folders: Vec<Folder>,
 }
@@ -219,6 +265,7 @@ fn bootstrap_of(s: &Store) -> Bootstrap {
         has_recovery: s.active_profile_has_recovery(),
         device_label: s.device_label().to_string(),
         minimize_to_tray: s.minimize_to_tray(),
+        can_remember: s.vault_is_encrypted(),
         hosts: s.hosts().to_vec(),
         folders: s.folders().to_vec(),
     }
@@ -390,18 +437,26 @@ fn forget_creds(state: State<'_, AppState>, host_id: HostId) -> Result<(), Strin
         .lock()
         .map_err(|_| "cred cache poisoned".to_string())?
         .remove(&host_id);
-    Ok(())
+    // Saklanmış sır da gitsin: "unut" dediğinde vault'ta kalırsa bir sonraki
+    // bağlanmada yine sessizce kullanılır ve kullanıcı unuttuğunu sanır.
+    state
+        .lock()?
+        .clear_host_secret(host_id)
+        .map_err(|e| e.to_string())
 }
 
 /// Bu host için bağlanma-anı kimliği önbellekte var mı (Gateway: Connect doğrudan mı,
 /// yoksa önce kimlik iste mi).
 #[tauri::command]
 fn host_is_cached(state: State<'_, AppState>, host_id: HostId) -> bool {
-    state
+    let in_memory = state
         .cached_creds
         .lock()
         .map(|m| m.contains_key(&host_id))
-        .unwrap_or(false)
+        .unwrap_or(false);
+    // Vault'ta saklanmış sır da "kimlik hazır" demektir — Gateway doğrudan bağlanır,
+    // uygulama yeniden açılsa bile parola sormaz.
+    in_memory || state.lock().is_ok_and(|s| s.host_secret(host_id).is_some())
 }
 
 /// Yeni host ekler, diske yazar; "hosts-changed" olayı yayınlar (köprü demosu).
@@ -856,6 +911,30 @@ fn sftp_rename(
     state.send_cmd(id, GuiCmd::Rename { from, to })
 }
 
+/// SFTP: uzak metin dosyasını oku (gömülü editör). Yanıt `portal://sftp/{id}`
+/// üzerinden `remoteContent` / `editError` olarak gelir.
+#[tauri::command]
+fn sftp_read(state: State<'_, AppState>, id: u64, path: String) -> Result<(), String> {
+    state.send_cmd(id, GuiCmd::ReadRemote(path))
+}
+
+/// SFTP: uzak metin dosyasını yaz (gömülü editör kaydı).
+#[tauri::command]
+fn sftp_write(
+    state: State<'_, AppState>,
+    id: u64,
+    path: String,
+    text: String,
+) -> Result<(), String> {
+    state.send_cmd(
+        id,
+        GuiCmd::WriteRemote {
+            path,
+            bytes: text.into_bytes(),
+        },
+    )
+}
+
 /// SFTP: uzak dosyayı/dizini sil (is_dir → boş dizin siler).
 #[tauri::command]
 fn sftp_remove(
@@ -1244,6 +1323,8 @@ fn main() {
             sftp_mkdir,
             sftp_rename,
             sftp_remove,
+            sftp_read,
+            sftp_write,
             list_local,
             local_home,
             list_monitors,

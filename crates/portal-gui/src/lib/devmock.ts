@@ -36,6 +36,8 @@ const EMPTY_BOOT = {
   has_recovery: false,
   device_label: "this machine",
   minimize_to_tray: false,
+  // Profil yok → vault düz metin → kimlik hatırlanamaz (çekirdek reddeder).
+  can_remember: false,
   hosts: [] as unknown[],
   folders: [] as unknown[],
 };
@@ -78,6 +80,19 @@ function applyOverrides(): void {
     ];
     boot.hosts = hosts;
     boot.profile = "preview";
+    boot.can_remember = true; // demo profili parolalı sayılır
+    // Yerel panel: sürükle-bırak ve satır davranışı tarayıcıda incelenebilsin diye
+    // birkaç örnek giriş (yalnız ?mock=demo).
+    RESULTS.local_home = "C:\\Users\\you";
+    RESULTS.list_local = {
+      path: "C:\\Users\\you\\Downloads",
+      parent: "C:\\Users\\you",
+      entries: [
+        { name: "notes", path: "C:\\Users\\you\\Downloads\\notes", isDir: true, size: 0 },
+        { name: "deploy.sh", path: "C:\\Users\\you\\Downloads\\deploy.sh", isDir: false, size: 1840 },
+        { name: "archive.tar.gz", path: "C:\\Users\\you\\Downloads\\archive.tar.gz", isDir: false, size: 5242880 },
+      ],
+    };
     RESULTS.list_hosts = hosts;
     RESULTS.list_snippets = [
       { id: "s1", label: "restart nginx", command: "sudo systemctl restart nginx", host_id: null },

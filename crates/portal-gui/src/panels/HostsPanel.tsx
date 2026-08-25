@@ -6,6 +6,7 @@
 // - Düzenleme: sağ-tık menü ya da seçili host'ta E.
 
 import { useEffect, useMemo, useState } from "react";
+import { createPortal } from "react-dom";
 import { Check, ChevronDown, Pencil, Search, Trash2 } from "lucide-react";
 import { usePortal } from "../context";
 import { openGateway, openTerminal } from "../dock/dock";
@@ -137,9 +138,15 @@ export function HostsPanel() {
     if (!menu) return;
     const close = () => setMenu(null);
     window.addEventListener("click", close);
+    // ⚠️ `contextmenu` da kapatmalı: sağ tık `click` ÜRETMEZ, o yüzden başka bir
+    // yere sağ tıklayınca bu menü açık kalıyor ve ikinci menüyle yan yana iki
+    // menü görünüyordu (kullanıcı bulgusu). Menüyü AÇAN olay `stopPropagation`
+    // yaptığı için kendi kendini kapatmaz.
+    window.addEventListener("contextmenu", close);
     window.addEventListener("blur", close);
     return () => {
       window.removeEventListener("click", close);
+      window.removeEventListener("contextmenu", close);
       window.removeEventListener("blur", close);
     };
   }, [menu]);
@@ -379,7 +386,11 @@ export function HostsPanel() {
         )}
       </div>
 
-      {menu && menuHost && (
+      {menu &&
+        menuHost &&
+        // Portal: `position: fixed` bir üst elemanda transform/contain varsa ona
+        // göre konumlanır ve menü tıklanan yerden uzakta çıkar. Bkz. ContextMenu.
+        createPortal(
         <div
           className="ctx hostctx"
           style={{
@@ -426,8 +437,9 @@ export function HostsPanel() {
             <span>Remove</span>
             <span className="mk" />
           </button>
-        </div>
-      )}
+        </div>,
+          document.body,
+        )}
     </div>
   );
 }
