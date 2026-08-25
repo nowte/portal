@@ -185,22 +185,6 @@ export function HomePanel() {
         run: () => showSide("uptime"),
       });
     }
-    for (const h of hosts) {
-      if (h.auto_connect && hostState(h.id) === "offline") {
-        out.push({
-          id: `auto:${h.id}`,
-          severity: "warn",
-          Icon: TriangleAlert,
-          title: `${h.label.trim() || h.address} — set to stay connected, but isn't`,
-          sub: hostTitle(h),
-          action: "Reconnect",
-          run: () => {
-            selectHost(h.id);
-            openTerminal(h.id, hostTitle(h));
-          },
-        });
-      }
-    }
     return out;
   }, [boot?.locked, hosts, hostState, monitors, selectHost]);
 

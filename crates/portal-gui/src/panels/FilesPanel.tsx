@@ -184,7 +184,8 @@ export function FilesPanel({ hostId, deferConnect }: { hostId: string; deferConn
     const close = () => setMenu(null);
     window.addEventListener("click", close);
     // Sağ tık `click` üretmez → başka yere sağ tıklayınca bu menü açık kalıyordu.
-    window.addEventListener("contextmenu", close);
+    // YAKALAMA fazı: hedef `stopPropagation` yapsa bile kapanır (bkz. HostsPanel).
+    window.addEventListener("contextmenu", close, true);
     window.addEventListener("blur", close);
     return () => {
       window.removeEventListener("click", close);

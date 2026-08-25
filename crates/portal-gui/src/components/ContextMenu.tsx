@@ -17,9 +17,12 @@ export function ContextMenu() {
       setPos({ x: e.clientX, y: e.clientY });
     };
     // Panel menüleri (host satırı, uzak dosya) kendi `contextmenu` olaylarını
-    // `stopPropagation` ile keser → buraya hiç gelmez, yani ikisi aynı anda
-    // açılmaz. Buraya gelen her olay "boş alana sağ tık" demektir.
+    // `stopPropagation` ile keser → `onCtx` (kabarma) onlarda hiç çalışmaz, yani
+    // bu menü panel menüsüyle birlikte AÇILMAZ. Ama zaten açıksa da kapanmıyordu →
+    // ekranda iki menü. Bu yüzden kapatma YAKALAMA fazında dinlenir: her sağ tıkta
+    // önce kapanır, boş alana tıklandıysa `onCtx` aynı olayda yeniden açar.
     const close = () => setPos(null);
+    window.addEventListener("contextmenu", close, true);
     const onEsc = (e: KeyboardEvent) => {
       if (e.key === "Escape") setPos(null);
     };
@@ -30,6 +33,7 @@ export function ContextMenu() {
     window.addEventListener("keydown", onEsc);
     return () => {
       window.removeEventListener("contextmenu", onCtx);
+      window.removeEventListener("contextmenu", close, true);
       window.removeEventListener("click", close);
       window.removeEventListener("blur", close);
       window.removeEventListener("resize", close);

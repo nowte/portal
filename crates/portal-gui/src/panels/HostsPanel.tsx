@@ -7,7 +7,15 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
-import { Check, ChevronDown, Pencil, Search, Trash2 } from "lucide-react";
+import {
+  Check,
+  ChevronDown,
+  PanelsTopLeft,
+  Pencil,
+  Search,
+  Terminal as TerminalIcon,
+  Trash2,
+} from "lucide-react";
 import { usePortal } from "../context";
 import { openGateway, openTerminal } from "../dock/dock";
 import type { Host } from "../lib/types";
@@ -138,11 +146,12 @@ export function HostsPanel() {
     if (!menu) return;
     const close = () => setMenu(null);
     window.addEventListener("click", close);
-    // ⚠️ `contextmenu` da kapatmalı: sağ tık `click` ÜRETMEZ, o yüzden başka bir
-    // yere sağ tıklayınca bu menü açık kalıyor ve ikinci menüyle yan yana iki
-    // menü görünüyordu (kullanıcı bulgusu). Menüyü AÇAN olay `stopPropagation`
-    // yaptığı için kendi kendini kapatmaz.
-    window.addEventListener("contextmenu", close);
+    // ⚠️ `contextmenu` da kapatmalı (sağ tık `click` ÜRETMEZ) ve YAKALAMA fazında:
+    // başka bir panelin satırı olayı `stopPropagation` ile kestiği için kabarma
+    // fazındaki dinleyici hiç çalışmıyor, bu menü açık kalıyor ve ekranda yan yana
+    // iki menü duruyordu (kullanıcı bulgusu). Capture hedeften ÖNCE çalışır.
+    // Kendi kendini kapatmaz: aynı olayda satır yeni menüyü set eder, son değer o.
+    window.addEventListener("contextmenu", close, true);
     window.addEventListener("blur", close);
     return () => {
       window.removeEventListener("click", close);
@@ -253,13 +262,13 @@ export function HostsPanel() {
             <button
               className={"hf-check lit" + (form.autoConnect ? " on" : "")}
               onClick={() => setForm({ ...form, autoConnect: !form.autoConnect })}
-              title="Open a shell automatically whenever you open this server."
+              title="Connect in the background when Portal starts. No terminal opens."
             >
               <span className="hf-box">
                 <Check size={16} strokeWidth={3} />
               </span>
               <span>
-                Keep connected — <b>auto-open a shell</b> when this server opens
+                Keep connected — <b>connect in the background</b> when Portal starts
               </span>
             </button>
             </div>
@@ -406,7 +415,7 @@ export function HostsPanel() {
               setMenu(null);
             }}
           >
-            Open
+            <PanelsTopLeft size={16} strokeWidth={1.75} /> Open
           </button>
           <button
             className="ctx-item"
@@ -415,7 +424,7 @@ export function HostsPanel() {
               setMenu(null);
             }}
           >
-            Connect (terminal)
+            <TerminalIcon size={16} strokeWidth={1.75} /> Connect (terminal)
           </button>
           <div className="ctx-sep" />
           <button
@@ -425,7 +434,7 @@ export function HostsPanel() {
               setMenu(null);
             }}
           >
-            Edit <span className="sc">E</span>
+            <Pencil size={16} strokeWidth={1.75} /> Edit <span className="sc">E</span>
           </button>
           <button
             className="ctx-item danger"
@@ -434,8 +443,7 @@ export function HostsPanel() {
               setMenu(null);
             }}
           >
-            <span>Remove</span>
-            <span className="mk" />
+            <Trash2 size={16} strokeWidth={1.75} /> Remove
           </button>
         </div>,
           document.body,

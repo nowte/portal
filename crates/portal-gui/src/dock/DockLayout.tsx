@@ -1,4 +1,4 @@
-import { type ComponentProps, useEffect, useRef } from "react";
+import { type ComponentProps } from "react";
 import {
   DockviewReact,
   type DockviewReadyEvent,
@@ -6,10 +6,7 @@ import {
   type IDockviewPanelProps,
 } from "dockview-react";
 import "dockview-react/dist/styles/dockview.css";
-import { bindApi, captureSideWidths, DND_STRATEGY, openGateway, persist, restoreOrBuild } from "./dock";
-import { usePortal } from "../context";
-import { hostIsCached } from "../lib/ipc";
-import type { Host } from "../lib/types";
+import { bindApi, captureSideWidths, DND_STRATEGY, persist, restoreOrBuild } from "./dock";
 import { HostsPanel } from "../panels/HostsPanel";
 import { HomePanel } from "../panels/HomePanel";
 import { GuidePanel } from "../panels/GuidePanel";
@@ -63,32 +60,10 @@ const tabComponents: Record<string, React.FunctionComponent<IDockviewPanelHeader
   ),
 };
 
-function hostTitle(h: Host): string {
-  return h.username ? `${h.username}@${h.address}` : h.address;
-}
-
 export function DockLayout() {
-  const { hosts } = usePortal();
-  // "Keep connected" AÇILIŞTA da çalışsın: bugüne kadar yalnız sunucu SAYFASI
-  // açılınca tetikleniyordu, yani uygulamayı açan kişi hâlâ elle tıklamak
-  // zorundaydı (kullanıcı bulgusu).
-  //
-  // ⚠️ Ama kimliği OLMAYAN host'u açılışta bağlamaya kalkma: her biri parola
-  // diyaloğu açar, AuthDialog eşzamanlı ikinci isteği reddeder ve geri kalanı
-  // sessizce başarısız olur. Yalnız kimliği hazır olanlar (bellek önbelleği ya
-  // da vault'ta saklanmış sır) otomatik bağlanır; diğerlerinin sayfası açılmaz.
-  const started = useRef(false);
-  useEffect(() => {
-    if (started.current || hosts.length === 0) return;
-    started.current = true;
-    void (async () => {
-      for (const h of hosts.filter((x) => x.auto_connect)) {
-        if (await hostIsCached(h.id).catch(() => false)) {
-          openGateway(h.id, hostTitle(h));
-        }
-      }
-    })();
-  }, [hosts]);
+  // "Keep connected" UYGULAMA AÇILIŞINDA tetiklenmez: kullanıcı Portal'ı her
+  // açtığında istemediği sunucuların terminali açılıyordu (kullanıcı bulgusu).
+  // Ayar artık "sunucu sayfasını açınca bağlan" demek — sahibi GatewayPanel.
 
   const onReady = (event: DockviewReadyEvent) => {
     bindApi(event.api);

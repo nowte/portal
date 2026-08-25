@@ -2,7 +2,7 @@
 // meta çipleri + büyük Connect/Files/Monitor + saved commands (tek-tık). Bağlantıyı
 // açmaz; ilgili document sekmesini açar (Terminal/Files/Monitor kendi bağlanır).
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { FolderTree, Gauge, Pencil, Plus, Terminal as TerminalIcon, Trash2, Zap } from "lucide-react";
 import { usePortal } from "../context";
 import { hostSnippets, onSnippetsChanged, removeSnippet } from "../lib/ipc";
@@ -11,28 +11,13 @@ import { openSnippets } from "../components/SnippetsManager";
 import { setGuideTopic } from "../lib/guide";
 import type { Snippet } from "../lib/types";
 
-export function GatewayPanel({ hostId, restored }: { hostId: string; restored?: boolean }) {
+export function GatewayPanel({ hostId }: { hostId: string }) {
   const { hosts, hostState } = usePortal();
   const host = hosts.find((h) => h.id === hostId);
   const [snippets, setSnippets] = useState<Snippet[]>([]);
   const st = hostState(hostId);
 
   useEffect(() => setGuideTopic("gateway"), []);
-
-  // "Sürekli bağlı tut" (auto_connect): Gateway açılınca yanına bir shell aç.
-  // Eskiden ServerWorkspace yapıyordu; düz mimaride sahibi burası.
-  // Diskten geri yüklenmiş bir Gateway'de TETİKLENMEZ — uygulama açılışında
-  // kendiliğinden parola diyaloğu çıkmasın.
-  const autoRef = useRef(false);
-  useEffect(() => {
-    if (restored || autoRef.current) return;
-    const h = hosts.find((x) => x.id === hostId);
-    if (!h?.auto_connect) return;
-    autoRef.current = true;
-    openTerminal(hostId, h.label.trim() || h.address);
-    // yalnız ilk mount'ta; hosts sonradan tazelense de tekrar açma.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [hosts.length]);
 
   const load = useCallback(() => {
     void hostSnippets(hostId).then(setSnippets).catch(() => undefined);

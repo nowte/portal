@@ -7,6 +7,7 @@ import {
   useContext,
   useEffect,
   useMemo,
+  useRef,
   useState,
   type ReactNode,
 } from "react";
@@ -200,6 +201,42 @@ export function PortalProvider({ children }: { children: ReactNode }) {
       return n;
     });
   }, []);
+  // "Keep connected": açılışta, kimliği HAZIR olan auto_connect host'lara arka
+  // planda bir shell açar. Panel AÇILMAZ — yalnız bağlantı canlı olur (host noktası
+  // yeşil, Gateway "connected" görür). Terminali kullanıcı ister (kullanıcı bulgusu).
+  //
+  // ⚠️ Kimliği önbellekte olmayan host atlanır: her biri parola diyaloğu açardı ve
+  // AuthDialog eşzamanlı ikinci isteği reddediyor. Arka planda soru soramadığımız
+  // için bilinmeyen host anahtarı da oturumu kapatır (kullanıcı elle bağlanınca sorar).
+  const autoStarted = useRef(false);
+  useEffect(() => {
+    if (autoStarted.current || hosts.length === 0) return;
+    autoStarted.current = true;
+    void (async () => {
+      for (const h of hosts.filter((x) => x.auto_connect)) {
+        if (!(await ipc.hostIsCached(h.id).catch(() => false))) continue;
+        try {
+          const id = await ipc.connectShell(h.id, 80, 24);
+          reportConn(id, h.id, "shell", "connecting");
+          let un: (() => void) | undefined;
+          const stop = () => {
+            un?.();
+            dropConn(id);
+          };
+          un = await ipc.onShell(id, (m) => {
+            if (m.type === "connected") reportConn(id, h.id, "shell", "connected");
+            else if (m.type === "hostKey") {
+              void ipc.closeSession(id);
+              stop();
+            } else if (m.type === "disconnected" || m.type === "error") stop();
+          });
+        } catch {
+          // Açılışta hata penceresi yağmasın; host offline kalır, kullanıcı elle bağlanır.
+        }
+      }
+    })();
+  }, [hosts, reportConn, dropConn]);
+
   const hostState = useCallback(
     (hostId: string): HostConn => {
       const list = Object.values(conns).filter((x) => x.hostId === hostId);

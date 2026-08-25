@@ -8,7 +8,7 @@
 // drop hedefleri isabet testinden düşüyordu. Bkz. styles.css'teki uyarı.
 
 import { TabClose } from "../components/TabClose";
-import { type ComponentProps, useEffect, useRef } from "react";
+import { type ComponentProps, useEffect } from "react";
 import {
   DockviewReact,
   type DockviewApi,
@@ -19,13 +19,10 @@ import {
 import {
   DND_STRATEGY,
   loadServerLayout,
-  openTerminal,
   persistServerLayout,
   registerServerDock,
   unregisterServerDock,
 } from "./dock";
-import { usePortal } from "../context";
-import type { Host } from "../lib/types";
 import { GatewayPanel } from "../panels/GatewayPanel";
 import { TerminalPanel } from "../panels/TerminalPanel";
 import { FilesPanel } from "../panels/FilesPanel";
@@ -35,9 +32,7 @@ import { EditorPanel } from "../panels/EditorPanel";
 // `restored`: düzen DİSKTEN geri yüklendiğinde true. Oturum pane'leri o zaman
 // kendiliğinden bağlanmaz (açılışta parola diyaloğu yağmasın) — bkz. deferConnect.
 const nestedComponents: Record<string, React.FunctionComponent<IDockviewPanelProps>> = {
-  gateway: (p: IDockviewPanelProps) => (
-    <GatewayPanel hostId={p.params.hostId as string} restored={p.params.restored === true} />
-  ),
+  gateway: (p: IDockviewPanelProps) => <GatewayPanel hostId={p.params.hostId as string} />,
   terminal: (p: IDockviewPanelProps) => (
     <TerminalPanel
       hostId={p.params.hostId as string}
@@ -75,17 +70,7 @@ const nestedTabs: Record<string, React.FunctionComponent<IDockviewPanelHeaderPro
   ),
 };
 
-function hostTitle(h: Host): string {
-  return h.username ? `${h.username}@${h.address}` : h.address;
-}
-
 export function ServerWorkspace({ hostId }: { hostId: string }) {
-  const { hosts } = usePortal();
-  const host = hosts.find((h) => h.id === hostId);
-  // onReady bir kez çalışır; güncel host'a ref ile eriş (stale closure'dan kaçın).
-  const hostRef = useRef(host);
-  hostRef.current = host;
-
   const addGateway = (dock: DockviewApi) => {
     // İlk pane: Gateway (karşılama + Connect/Files/Monitor); KAPATILAMAZ (panefixed).
     dock.addPanel({
@@ -133,13 +118,6 @@ export function ServerWorkspace({ hostId }: { hostId: string }) {
     registerServerDock(hostId, e.api);
     // Her düzen değişikliğinde (sürükleme dahil) yerleşimi hatırla.
     e.api.onDidLayoutChange(() => persistServerLayout(hostId, e.api.toJSON()));
-
-    // "Sürekli bağlı tut": sayfa açılınca otomatik bir shell aç (Gateway'in yanında).
-    // Geri yüklenen düzende zaten terminal varsa ikincisini açma.
-    const h = hostRef.current;
-    if (h?.auto_connect && !e.api.panels.some((p) => p.id.startsWith("term:"))) {
-      openTerminal(hostId, hostTitle(h));
-    }
   };
 
   useEffect(() => () => unregisterServerDock(hostId), [hostId]);
