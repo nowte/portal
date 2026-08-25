@@ -472,7 +472,8 @@ function withServerDock(hostId: string, title: string, fn: (dock: DockviewApi) =
   openServerPage(hostId, title);
 }
 
-/** İç dock'a bir pane ekle; Gateway'in SAĞINA yerleşir, kullanıcı sonra taşır. */
+/** İç dock'a bir pane ekle. Yeni bölme AÇMAZ: aynı türden bir pane açıksa onun
+ *  yanına sekme olur, yoksa Gateway'in şeridine girer. Bölmeyi kullanıcı ayırır. */
 function addPane(
   dock: DockviewApi,
   id: string,
@@ -486,7 +487,10 @@ function addPane(
     existing.focus();
     return;
   }
-  const gw = dock.getPanel(`gw:${hostId}`);
+  // Aynı tür (terminal:/files:/edit:…) açıksa onun grubuna; değilse Gateway'in grubuna.
+  const kind = id.slice(0, id.indexOf(":") + 1);
+  const sibling =
+    dock.panels.find((p) => p.id !== id && p.id.startsWith(kind)) ?? dock.getPanel(`gw:${hostId}`);
   dock.addPanel({
     id,
     component,
@@ -494,7 +498,7 @@ function addPane(
     params,
     tabComponent: "pane",
     renderer: "always",
-    position: (gw ? { referencePanel: gw.id, direction: "right" } : undefined) as never,
+    position: (sibling ? { referencePanel: sibling.id, direction: "within" } : undefined) as never,
   });
 }
 
@@ -548,6 +552,8 @@ export function floatEditor(hostId: string, sessionId: number, path: string): vo
     existing.focus();
     return;
   }
+  // Zaten yüzen bir editör varsa ikinci pencere açma — onun şeridine sekme olarak gir.
+  const open = api?.panels.find((p) => p.id.startsWith("floatedit:"));
   api?.addPanel({
     id,
     component: "editor",
@@ -555,7 +561,9 @@ export function floatEditor(hostId: string, sessionId: number, path: string): vo
     params: { hostId, sessionId, path, floating: true },
     // Başlık şeridi: dosya adı + kapatma (×) — dockview'ün boş varsayılanı değil.
     tabComponent: "doctab",
-    floating: { width: 760, height: 520 },
+    ...(open
+      ? { position: { referencePanel: open.id, direction: "within" as const } }
+      : { floating: { width: 760, height: 520 } }),
   });
 }
 
