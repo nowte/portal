@@ -1,0 +1,29 @@
+[package]
+name = "portal-gui"
+version = "0.9.0"
+edition = "2021"
+description = "Portal — Windows GUI (Tauri v2)"
+authors = ["nowtes <hi@nowtes.co>"]
+license = "GPL-3.0-only"
+repository = "https://github.com/nowte/portal"
+
+# Ana workspace'ten AYRI: çekirdek doğrulama kapısı (cargo test --workspace) hafif
+# kalsın diye. portal-core path-dep olarak gelir. Bkz. docs/ARCHITECTURE.md §4.
+[workspace]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+# tray-icon: pencere kapatılınca tepsiye inme (uptime kontrolleri sürsün).
+tauri = { version = "2", features = ["tray-icon"] }
+# Native dosya/klasör seçici (Files: Upload dosya seç, Download hedef klasör).
+tauri-plugin-dialog = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+# Shell çıktısını olayda base64 taşı (UTF-8 sınırı bozulmasın). portal-core da 0.22.
+base64 = "0.22"
+# Kilit-açma/kurtarma parolalarını kullanımdan sonra bellekten sıfırla (P6-D #2).
+zeroize = "1"
+# Tek çekirdek: tüm domain mantığı burada. UI yalnız çağırır.
+portal-core = { path = "../../portal-core" }

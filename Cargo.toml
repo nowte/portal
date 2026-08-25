@@ -1,0 +1,64 @@
+# Portal — Cargo workspace root.
+# Tek çekirdek: tüm domain mantığı portal-core'da; GUI (crates/portal-gui/src-tauri,
+# AYRI workspace) yalnızca ince kabuk.
+# Bkz. docs/ARCHITECTURE.md §4.
+[workspace]
+resolver = "2"
+members = ["crates/portal-core"]
+
+[workspace.package]
+version = "0.9.0"
+edition = "2021"
+authors = ["nowtes <hi@nowtes.co>"]
+repository = "https://github.com/nowte/portal"
+license = "GPL-3.0-only"
+
+# Tek sürüm noktası: crate'ler bu bağımlılıkları `workspace = true` ile devralır.
+[workspace.dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+toml = "0.8"
+thiserror = "2"
+uuid = { version = "1", features = ["v4", "serde"] }
+directories = "5"
+tracing = "0.1"
+tempfile = "3"
+# Async çekirdek: SSH + eşzamanlı I/O (docs/ARCHITECTURE.md §2).
+tokio = { version = "1", features = [
+    "rt-multi-thread",
+    "net",
+    "io-util",
+    "sync",
+    "macros",
+    "time",
+    "fs",
+] }
+# SSH: ring backend'i (aws-lc-rs yerine) — C/asm bağımlılığı minimum, kolay çapraz derleme.
+russh = { version = "0.62", default-features = false, features = ["ring", "rsa"] }
+# SFTP: dosya listeleme / transfer (aynı ekosistem).
+russh-sftp = "2.4"
+# Vault kripto (docs/ARCHITECTURE.md §2). Bilinen kütüphaneler; kendi kripto YOK.
+# Argon2id → paroladan anahtar; XChaCha20-Poly1305 → AEAD.
+argon2 = "0.5"
+chacha20poly1305 = "0.10"
+# Rastgelelik: DEK/salt/nonce. 0.2 kararlı API (getrandom::getrandom).
+getrandom = "0.2"
+# Anahtar üretimi için CSPRNG (ssh-key `PrivateKey::random` — russh'un kullandığı yol).
+rand = "0.10"
+# Bellekteki gizli materyali sıfırla (DEK/KEK/parola tamponları).
+zeroize = { version = "1", features = ["derive"] }
+# Zarf başlığında ikili alanları base64 taşı (dosya "şifreli" olduğu gözle görülür).
+base64 = "0.22"
+# Parolasız modda makine-anahtarını OS kasasında tut. Varsayılan `v1` feature'ı
+# platform native store'ları getirir (Windows Credential Manager / macOS Keychain /
+# Linux zbus secret-service), target-gated → Windows'ta dbus derlenmez.
+keyring = "4"
+# Uptime kontrolleri icin blocking HTTP istemcisi. reqwest yerine ureq: bu is
+# icin async gerekmiyor ve hyper/tower agacini getirmiyor.
+ureq = "3"
+portal-core = { path = "crates/portal-core" }
+
+# Release binary'leri küçük ve hızlı: tek statik binary hedefi (docs/ARCHITECTURE.md §10).
+[profile.release]
+lto = "thin"
+strip = true

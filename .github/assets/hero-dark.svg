@@ -1,0 +1,48 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="900" height="430" viewBox="0 0 900 430" role="img" aria-label="Portal — SSH and VPS manager. No account, no server, encrypted local vault.">
+  <style>
+    .m { font-family: ui-monospace, "SF Mono", "Commit Mono", Consolas, "DejaVu Sans Mono", monospace; font-size: 14px; letter-spacing: .1px; white-space: pre; }
+    .b { font-weight: 600; }
+    @keyframes fade { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
+    @keyframes blink { 0%,45% { opacity: 1; } 55%,100% { opacity: 0; } }
+    .cur { animation: blink 1.1s steps(1) infinite; animation-delay: 1.2s; }
+    .l1 { animation: fade .38s cubic-bezier(.2,.7,.3,1) both; animation-delay: 0.15s; }
+    .l2 { animation: fade .38s cubic-bezier(.2,.7,.3,1) both; animation-delay: 0.19s; }
+    .l3 { animation: fade .38s cubic-bezier(.2,.7,.3,1) both; animation-delay: 0.24s; }
+    .l4 { animation: fade .38s cubic-bezier(.2,.7,.3,1) both; animation-delay: 0.28s; }
+    .l5 { animation: fade .38s cubic-bezier(.2,.7,.3,1) both; animation-delay: 0.32s; }
+    .l6 { animation: fade .38s cubic-bezier(.2,.7,.3,1) both; animation-delay: 0.37s; }
+    .l7 { animation: fade .38s cubic-bezier(.2,.7,.3,1) both; animation-delay: 0.42s; }
+    .l8 { animation: fade .38s cubic-bezier(.2,.7,.3,1) both; animation-delay: 0.46s; }
+    .l9 { animation: fade .38s cubic-bezier(.2,.7,.3,1) both; animation-delay: 0.51s; }
+    .l10 { animation: fade .38s cubic-bezier(.2,.7,.3,1) both; animation-delay: 0.55s; }
+    .l11 { animation: fade .38s cubic-bezier(.2,.7,.3,1) both; animation-delay: 0.59s; }
+    .l12 { animation: fade .38s cubic-bezier(.2,.7,.3,1) both; animation-delay: 0.64s; }
+    .l13 { animation: fade .38s cubic-bezier(.2,.7,.3,1) both; animation-delay: 0.68s; }
+    .l14 { animation: fade .38s cubic-bezier(.2,.7,.3,1) both; animation-delay: 0.73s; }
+    .l15 { animation: fade .38s cubic-bezier(.2,.7,.3,1) both; animation-delay: 0.77s; }
+    .l16 { animation: fade .38s cubic-bezier(.2,.7,.3,1) both; animation-delay: 0.82s; }
+    .l17 { animation: fade .38s cubic-bezier(.2,.7,.3,1) both; animation-delay: 0.86s; }
+    .l18 { animation: fade .38s cubic-bezier(.2,.7,.3,1) both; animation-delay: 0.91s; }
+    .l19 { animation: fade .38s cubic-bezier(.2,.7,.3,1) both; animation-delay: 0.95s; }
+    @media (prefers-reduced-motion: reduce) {
+      svg * { animation: none !important; opacity: 1 !important; transform: none !important; }
+    }
+  </style>
+  <rect width="900" height="430" rx="14" fill="#0a0a0a"/>
+  <rect x="0.5" y="0.5" width="899" height="429" rx="13.5" fill="none" stroke="#262626"/>
+  <circle cx="26" cy="26" r="4" fill="#5b9e77"/>
+  <text class="l1 m b" x="40" y="62" fill="#fafafa">$ portal --status</text>
+  <text class="l3 m b" x="40" y="96" fill="#ededed">●  Portal — SSH &amp; VPS manager for people who like their data at home</text>
+  <text class="l5 m" x="58" y="130" fill="#8f8f8f">Account  </text><text class="l5 m" x="170" y="130" fill="#ededed">none — there is nothing to sign up for</text>
+  <text class="l6 m" x="58" y="152" fill="#8f8f8f">Server   </text><text class="l6 m" x="170" y="152" fill="#ededed">none — nothing to deploy, one installer</text>
+  <text class="l7 m" x="58" y="174" fill="#8f8f8f">Vault    </text><text class="l7 m" x="170" y="174" fill="#ededed">Argon2id + XChaCha20-Poly1305, on your disk</text>
+  <text class="l8 m" x="58" y="196" fill="#8f8f8f">Egress   </text><text class="l8 m" x="170" y="196" fill="#ededed">only the hosts you added. nothing else.</text>
+  <rect class="l10" x="40" y="222" width="820" height="1" fill="#262626"/>
+  <text class="l12 m b" x="40" y="256" fill="#ededed">terminal  </text><text class="l12 m" x="160" y="256" fill="#8f8f8f">xterm.js over a real PTY</text><text class="l12 m" x="470" y="256" fill="#565656">colour · resize · scrollback</text>
+  <text class="l13 m b" x="40" y="278" fill="#ededed">files     </text><text class="l13 m" x="160" y="278" fill="#8f8f8f">two-pane SFTP, drag &amp; drop</text><text class="l13 m" x="470" y="278" fill="#565656">queue · cancel · remote edit</text>
+  <text class="l14 m b" x="40" y="300" fill="#ededed">monitor   </text><text class="l14 m" x="160" y="300" fill="#8f8f8f">cpu · ram · disk · net</text><text class="l14 m" x="470" y="300" fill="#565656">no agent, just /proc</text>
+  <text class="l15 m b" x="40" y="322" fill="#ededed">uptime    </text><text class="l15 m" x="160" y="322" fill="#8f8f8f">http + tcp checks, history</text><text class="l15 m" x="470" y="322" fill="#565656">neither rival ships this</text>
+  <text class="l16 m b" x="40" y="344" fill="#ededed">sync      </text><text class="l16 m" x="160" y="344" fill="#8f8f8f">your folder, your rules</text><text class="l16 m" x="470" y="344" fill="#565656">encrypted file, BYOS</text>
+  <text class="l18 m" x="40" y="378" fill="#565656">  written in rust · tauri v2 · free for everyone · no telemetry</text>
+  <text class="l19 m b" x="40" y="400" fill="#fafafa">$ </text><rect class="l19 cur" x="62" y="388" width="9" height="16" fill="#fafafa"/>
+</svg>

@@ -1,0 +1,2947 @@
+/* ══════════════════════════════════════════════════════════════════════════
+   Portal GUI — tasarım sistemi
+   Kaynak: docs/mockups/portal-windows-gui-main.html (ana ekran) + DESIGN §2/§12.
+   Saf monokrom; renk YALNIZ durum içindir (green/red/amber). UI = Switzer,
+   her ip/metrik/yol/kısayol = Commit Mono (tabular).
+
+   Katmanlar:
+     1. Token       — renk · tipografi · yarıçap · gölge · motion
+     2. Temel       — reset, odak, kaydırma çubuğu, seçim
+     3. Motion      — keyframe'ler + tek reduced-motion kapısı
+     4. Primitive   — buton · alan · kart · eyebrow · dot · chip · menü · modal
+     5. Kabuk       — topbar · iconbar · statusbar · dockview
+     6. Panel       — hosts · home · gateway · guide · terminal · files · monitor
+     7. Overlay     — palette · dialog · settings · snippets
+     8. Tam ekran   — loading · onboarding · unlock
+   ══════════════════════════════════════════════════════════════════════════ */
+
+/* Switzer — statik kesitler (Commit Mono ile aynı desen). Kodda fiilen yalnız
+   400/500/600 kullanılıyor. Dosyalar REPODA DEĞİL: ITF Free Font License fontu
+   kullanmaya ve uygulamaya gömmeye izin verir ama font dosyasını "repository"
+   üzerinden dağıtmayı yasaklar. `npm install` (postinstall → scripts/fetch-fonts.mjs)
+   onları doğrudan Fontshare'den indirir. İndirme başarısızsa 0 baytlık yer tutucu
+   kalır ve arayüz sistem sans-serif'ine düşer — build kırılmaz. */
+@font-face {
+  font-family: "Switzer";
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url("./assets/fonts/Switzer-400.woff2") format("woff2");
+}
+@font-face {
+  font-family: "Switzer";
+  font-style: normal;
+  font-weight: 500;
+  font-display: swap;
+  src: url("./assets/fonts/Switzer-500.woff2") format("woff2");
+}
+@font-face {
+  font-family: "Switzer";
+  font-style: normal;
+  font-weight: 600;
+  font-display: swap;
+  src: url("./assets/fonts/Switzer-600.woff2") format("woff2");
+}
+/* Commit Mono — variable sürümü dağıtılmıyor, statik kesitler. Kodda fiilen
+   yalnız 400/500/600 kullanılıyor (grep: var(--mono) + font-weight), üçü bundle. */
+@font-face {
+  font-family: "Commit Mono";
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url("./assets/fonts/CommitMono-400.woff2") format("woff2");
+}
+@font-face {
+  font-family: "Commit Mono";
+  font-style: normal;
+  font-weight: 500;
+  font-display: swap;
+  src: url("./assets/fonts/CommitMono-500.woff2") format("woff2");
+}
+@font-face {
+  font-family: "Commit Mono";
+  font-style: normal;
+  font-weight: 600;
+  font-display: swap;
+  src: url("./assets/fonts/CommitMono-600.woff2") format("woff2");
+}
+
+/* ══ 1. TOKEN ═══════════════════════════════════════════════════════════════ */
+
+:root,
+:root[data-theme="black"] {
+  /* Palet — GK2: redesign'da tek bir hex değişmedi (DESIGN §2). */
+  --bg-deep: #000000;
+  --bg: #0a0a0a;
+  --sidebar: #000000;
+  --surface: #0f0f0f;
+  --panel: #141414;
+  --panel-2: #1c1c1c;
+  --border: #262626;
+  --border-soft: #1a1a1a;
+  --edge: #333333;
+  --text: #ededed;
+  --dim: #8f8f8f;         /* ikincil metin + TÜM mono veri (§2.1) */
+  --faint: #565656;       /* YALNIZ dekoratif iz — okunacak metin ASLA (§2.1) */
+  --primary: #fafafa;
+  --on-primary: #0a0a0a;
+  --green: #5b9e77;
+  --red: #c7514f;
+  --amber: #b58a4c;
+  --scroll-thumb: #333333;
+  --sel: rgba(250, 250, 250, 0.16);
+  --shadow: 0 18px 48px -12px rgba(0, 0, 0, 0.72), 0 2px 8px rgba(0, 0, 0, 0.5);
+  --shadow-pop: 0 12px 30px -8px rgba(0, 0, 0, 0.66), 0 1px 2px rgba(0, 0, 0, 0.5);
+  --scrim: rgba(0, 0, 0, 0.5);
+
+
+  --sans: "Switzer", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --mono: "Commit Mono", ui-monospace, "Cascadia Code", Consolas, monospace;
+  --iconbar: 52px;
+
+  /* ── Tipografi (§7.1) — ALTI boyut. Yedinci yok, 11px altı yok. */
+  --fs-1: 11px;   /* mikro etiket, statusbar, kbd */
+  --fs-2: 12px;   /* metadata, mono adres, ikincil satır */
+  --fs-3: 14px;   /* TEMEL gövde, liste satırı, buton */
+  --fs-4: 18px;   /* bölüm başlığı, diyalog başlığı, metrik değeri */
+  --fs-5: 24px;   /* kart başlığı, sihirbaz başlığı */
+  --fs-6: 34px;   /* hero başlığı */
+
+  /* ── Izgara (§5.2) — 8px taban, ALTI değer. Ara değer yok. */
+  --sp-1: 4px;    /* ikon↔metin, glif↔etiket */
+  --sp-2: 8px;    /* satır içi öğe arası */
+  --sp-3: 16px;   /* blok arası */
+  --sp-4: 24px;   /* panel girintisi, bölüm arası */
+  --sp-5: 40px;   /* büyük bölüm arası */
+  --sp-6: 64px;   /* hero üstü/altı */
+  --inset: 24px;  /* tek-x yasası (§5.1): panelin TEK içerik girintisi */
+
+  /* ── Yarıçap (§6) — ÜÇ değer. Kap içindekinden bir kademe büyük. */
+  --r-s: 8px;     /* satır, ikon butonu, input, küçük kontrol */
+  --r-m: 10px;    /* panel, kart, chip, dock hücresi */
+  --r-l: 14px;    /* pencere, modal, komut paleti */
+
+  /* ── 30° yasası (§4) — Portal'daki her eğik kenar bu açıdadır. */
+  --angle: 30deg;
+  --chamfer: 12px;
+
+  /* ── Motion (§12) — TÜM süre ve eğri yalnız burada tanımlanır (GK3).
+     §3 dışında sabit ms / cubic-bezier yazılmaz. */
+  --ease-out: cubic-bezier(0.23, 1, 0.32, 1);      /* giriş, kullanıcıya yanıt */
+  --ease-in-out: cubic-bezier(0.77, 0, 0.175, 1);  /* ekran içi A→B */
+  --ease-pop: cubic-bezier(0.2, 0.8, 0.2, 1);      /* popover, dropdown */
+
+  --dur-press: 120ms;   /* buton basış */
+  --dur-hover: 130ms;   /* hover, ışık kenarı geçişi */
+  --dur-pop: 160ms;     /* dropdown, popover, context menu */
+  --dur-panel: 200ms;   /* panel / sekme içeriği */
+  --dur-modal: 240ms;   /* modal, tam ekran kart */
+  --dur-exit: 140ms;    /* HER çıkış — girişten hızlı */
+  --dur-pulse: 1300ms;  /* connecting nabzı (§9) */
+  --dur-shake: 240ms;   /* hata sarsılması (§9) */
+  --dur-tick: 300ms;    /* sayaç interpolasyonu (§13) */
+  --dur-reveal: 20ms;   /* stagger adımı (§13) */
+  --dur-gate: 600ms;    /* tam-ekran kapı açılışı (§13 Reveal) */
+  --dur-band: 2400ms;   /* loading ışık bandı (§4.1, bilinçli yavaş) */
+  --dur-enter: 280ms;   /* uygulama girişi + loading göstergesinin gecikmesi */
+  --dur-card: 320ms;    /* tam-ekran kartın netleşmesi */
+  --dur-spin: 600ms;    /* tazeleme düğmesinin TEK turu */
+  --dur-hatch: 900ms;   /* aktif transferin 30° tarama döngüsü */
+}
+
+/* §7.3 — mikro etiket: CÜMLE DÜZENİ, 600, --dim. UPPERCASE tracked YASAK.
+   (v0.5'te tek bir görsel öğe beş farklı tracking'le geliyordu: 0.08 / 0.1 /
+   0.12 / 0.13 / 0.14em — bu kural onu imkânsız kılar.) */
+.u {
+  display: block;
+  font-size: var(--fs-2);
+  font-weight: 600;
+  color: var(--dim);
+  text-transform: none;
+  letter-spacing: 0;
+}
+
+/* Graphite — nötr koyu gri. */
+:root[data-theme="graphite"] {
+  --bg-deep: #111112;
+  --bg: #1a1a1b;
+  --sidebar: #161617;
+  --surface: #1e1e1f;
+  --panel: #242426;
+  --panel-2: #2c2c2f;
+  --border: #37373a;
+  --border-soft: #2a2a2d;
+  --edge: #454549;
+  --text: #ededed;
+  --dim: #9b9ba0;
+  --faint: #6a6a6f;
+  --primary: #fafafa;
+  --on-primary: #161617;
+  --green: #63a67f;
+  --red: #cd5a58;
+  --amber: #bd9256;
+  --scroll-thumb: #454549;
+  --sel: rgba(250, 250, 250, 0.15);
+  --shadow: 0 18px 48px -12px rgba(0, 0, 0, 0.62), 0 2px 8px rgba(0, 0, 0, 0.44);
+  --shadow-pop: 0 12px 30px -8px rgba(0, 0, 0, 0.56), 0 1px 2px rgba(0, 0, 0, 0.44);
+  --scrim: rgba(0, 0, 0, 0.5);
+}
+
+/* Paper — açık. Işık modeli ters çevrilir (§3): --primary koyu olduğu için
+   ışığın RENGİ kendiliğinden döner; döndürülmesi gereken tek şey KENARDIR
+   (üst → alt) ve alfa kademeleridir (koyu-üstüne-açık %6'da görünmez). */
+:root[data-theme="paper"] {
+  --bg-deep: #e9e9e9;
+  --bg: #f6f6f6;
+  --sidebar: #efefef;
+  --surface: #ffffff;
+  --panel: #fbfbfb;
+  --panel-2: #f1f1f1;
+  --border: #e3e3e3;
+  --border-soft: #ededed;
+  --edge: #d5d5d5;
+  --text: #1b1b1b;
+  --dim: #6b6b6b;
+  --faint: #9a9a9a;
+  --primary: #0c0c0c;
+  --on-primary: #fbfbfb;
+  --green: #3c7a54;
+  --red: #b03b39;
+  --amber: #8a6524;
+  --scroll-thumb: #c9c9c9;
+  --sel: rgba(10, 10, 10, 0.12);
+  --shadow: 0 20px 50px -16px rgba(20, 20, 20, 0.24), 0 2px 8px rgba(20, 20, 20, 0.1);
+  --shadow-pop: 0 12px 30px -10px rgba(20, 20, 20, 0.2), 0 1px 2px rgba(20, 20, 20, 0.1);
+  --scrim: rgba(20, 20, 20, 0.28);
+}
+
+/* Contrast — saf siyah/beyaz. */
+:root[data-theme="contrast"] {
+  --bg-deep: #000000;
+  --bg: #000000;
+  --sidebar: #000000;
+  --surface: #000000;
+  --panel: #060606;
+  --panel-2: #0f0f0f;
+  --border: #454545;
+  --border-soft: #2b2b2b;
+  --edge: #5c5c5c;
+  --text: #ffffff;
+  --dim: #c2c2c2;
+  --faint: #7d7d7d;
+  --primary: #ffffff;
+  --on-primary: #000000;
+  --green: #69b487;
+  --red: #e06462;
+  --amber: #cf9f5f;
+  --scroll-thumb: #5c5c5c;
+  --sel: rgba(255, 255, 255, 0.22);
+  --shadow: 0 18px 48px -12px rgba(0, 0, 0, 0.8), 0 0 0 1px rgba(255, 255, 255, 0.04);
+  --shadow-pop: 0 12px 30px -8px rgba(0, 0, 0, 0.76), 0 0 0 1px rgba(255, 255, 255, 0.05);
+  --scrim: rgba(0, 0, 0, 0.6);
+}
+
+/* ══ 2. TEMEL ═══════════════════════════════════════════════════════════════ */
+
+* { box-sizing: border-box; }
+html, body, #root { height: 100%; }
+body {
+  margin: 0;
+  background: var(--bg-deep);
+  color: var(--text);
+  font-family: var(--sans);
+  font-size: var(--fs-3);
+  line-height: 1.45;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+  overflow: hidden;
+}
+
+/* §7.2 — ağırlık tavanı 600. <b>/<strong> tarayıcı varsayılanı 700'dür;
+   bastırılmazsa sınıf yazmadığın her vurgulu kelimede tavan sessizce aşılır. */
+b, strong { font-weight: 600; }
+/* [hidden] bir UA stilidir; herhangi bir SINIF display kuralı onu ezer. */
+[hidden] { display: none !important; }
+
+button { font: inherit; color: inherit; background: none; border: none; cursor: pointer; }
+input, textarea, select { font: inherit; }
+
+/* §10 — odak halkası elemanın yarıçapını DEĞİŞTİRMEZ (v0.5'te eziyordu). */
+:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
+
+/* ── Yüzey yardımcısı ─────────────────────────────────────────────────────
+   Işık kenarı modeli kaldırıldı: yüzeyler artık yalnız ZEMİN KADEMESİYLE
+   ayrışır (--surface → --panel → --panel-2). Ne kenarlık var ne ışık.
+   `.lit` geriye yalnız konumlandırma olarak kaldı — rozet, süpürme katmanı
+   gibi mutlak konumlu çocuklar buna bağlı. */
+.lit { position: relative; }
+
+/* Tema geçişi: yalnız renk, yalnız ilk boyamadan SONRA (.theme-ready kökte).
+   Böylece açılışta token'lar yerleşirken renk kayması animasyonu görünmez. */
+.theme-ready body,
+.theme-ready .app,
+.theme-ready .topbar,
+.theme-ready .iconbar,
+.theme-ready .statusbar,
+.theme-ready .panelbody,
+.theme-ready .dockhost,
+.theme-ready .sysband,
+.theme-ready .guide-body {
+  transition: background-color var(--dur-panel) ease, color var(--dur-hover) ease,
+    border-color var(--dur-panel) ease;
+}
+
+/* §7.4 — adres · port · yol · bayt · süre · metrik · parmak izi · kısayol:
+   hepsi mono, hepsi tabular. Sistemin tipografik imzası. */
+.mono { font-family: var(--mono); font-variant-numeric: tabular-nums; font-feature-settings: "tnum"; }
+.num { font-variant-numeric: tabular-nums; font-feature-settings: "tnum"; }
+.min0 { flex: 1; min-width: 0; }
+.t-dim { color: var(--dim); }
+.t-faint { color: var(--faint); }
+.dlg-ic { vertical-align: -3px; }
+
+* { scrollbar-width: thin; scrollbar-color: var(--scroll-thumb) transparent; }
+::-webkit-scrollbar { width: var(--sp-2); height: var(--sp-2); }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb {
+  background: var(--scroll-thumb); border-radius: 20px;
+  border: 2px solid transparent; background-clip: padding-box;
+}
+::-webkit-scrollbar-thumb:hover { background: var(--faint); }
+::selection { background: var(--sel); color: var(--text); }
+
+/* ══ 3. MOTION ══════════════════════════════════════════════════════════════
+   TÜM keyframe'ler burada; başka bölümde @keyframes yoktur (GK3). Hepsi
+   yalnız transform + opacity oynatır (§11.4). Hiçbiri scale(0)'dan başlamaz. */
+
+@keyframes p-fade { from { opacity: 0; } to { opacity: 1; } }
+
+/* Modal: merkezden ölçeklenir — bir tetikleyiciye bağlı değil (§13). */
+@keyframes p-modal-in {
+  from { opacity: 0; transform: scale(0.96); }
+  to   { opacity: 1; transform: none; }
+}
+
+/* Popover / dropdown / context menu: tetikleyicisinden büyür
+   (transform-origin çağrı yerinde ayarlanır) — Origin-aware (§13). */
+@keyframes p-pop-in {
+  from { opacity: 0; transform: scale(0.94); }
+  to   { opacity: 1; transform: none; }
+}
+
+/* Panel içeriği mount: Stagger of Fade in — 4px, dekoratif değil. */
+@keyframes p-rise {
+  from { opacity: 0; transform: translateY(4px); }
+  to   { opacity: 1; transform: none; }
+}
+
+/* Tam ekran kart (onboarding / unlock) — kapı açılır gibi. */
+@keyframes p-card-in {
+  from { opacity: 0; transform: translateY(6px) scale(0.99); }
+  to   { opacity: 1; transform: none; }
+}
+
+/* Tazeleme: TEK tur. Sürekli dönen spinner §13'te yasak — bu bir "çalışıyor"
+   göstergesi değil, "bastın, aldım" yanıtı. */
+@keyframes p-spin { from { rotate: 0deg; } to { rotate: 360deg; } }
+
+/* §9 — connecting: canlı ama tamamlanmamış. Durduğu an bağlanmıştır. */
+@keyframes p-pulse { 0%, 100% { transform: scale(0.75); opacity: 0.5; } 50% { transform: scale(1); opacity: 1; } }
+/* §14 — dikkat: TEK çevrim, mount'ta. Tekrarlayan nabız yasak. */
+@keyframes p-attn { 0%, 100% { opacity: 0.55; } 50% { opacity: 1; } }
+@keyframes p-skel { 50% { opacity: 0.4; } }
+/* §4.1 — birincil buton ışık süpürmesi: 30° (330deg gradyan), tetiklenir. */
+@keyframes p-sweep { from { transform: translateX(-120%); } to { transform: translateX(120%); } }
+/* Loading isik bandi: band kutunun %64'u; %156 asagi gidince tamamen cikar. */
+@keyframes p-beam { from { transform: translateY(-100%); } to { transform: translateY(156%); } }
+@keyframes p-app-in {
+  from { opacity: 0; transform: translateY(6px) scale(0.995); }
+  to   { opacity: 1; transform: none; }
+}
+/* Host formu: listenin ustunden acilir — yukaridan iner, asagidan degil. */
+@keyframes p-form-in {
+  from { opacity: 0; transform: translateY(-4px); }
+  to   { opacity: 1; transform: none; }
+}
+/* Files: birak-hedefi seridi + aktif transferin 30 derece taramasi. */
+@keyframes p-drop-in { from { opacity: 0; transform: translateY(100%); } to { opacity: 1; transform: none; } }
+@keyframes p-hatch { to { transform: translateX(12px); } }
+@keyframes p-shake {
+  0%, 100% { transform: translateX(0); }
+  25% { transform: translateX(-6px); }
+  75% { transform: translateX(6px); }
+}
+/* Markın TEK animasyonu: glow nefes alır. (Önceki "açıklığa kare girip
+   parıldayan" nabız + 30° ışık bandı kaldırıldı — mark boşluklu değil, tek
+   parça; doldurulacak bir açıklığı yok.) */
+@keyframes p-mark-glow { 0%, 100% { --mark-glow: 0.22; } 50% { --mark-glow: 0.62; } }
+@property --mark-glow { syntax: "<number>"; inherits: true; initial-value: 0.28; }
+/* Yalnız reduced-motion'da: ışık bandının yerine geçen sessiz nefes. */
+@keyframes p-mark-breathe {
+  0%, 100% { opacity: var(--mark-rest); }
+  50%      { opacity: calc(var(--mark-rest) + 0.42); }
+}
+
+/* Stagger (§13): 20ms adım, ilk 6 öğe — sonrası anında. */
+.reveal { opacity: 0; animation: p-rise var(--dur-panel) var(--ease-out) forwards; }
+.reveal-1 { animation-delay: 0ms; }
+.reveal-2 { animation-delay: calc(var(--dur-reveal) * 1); }
+.reveal-3 { animation-delay: calc(var(--dur-reveal) * 2); }
+.reveal-4 { animation-delay: calc(var(--dur-reveal) * 3); }
+.reveal-5 { animation-delay: calc(var(--dur-reveal) * 4); }
+.reveal-6 { animation-delay: calc(var(--dur-reveal) * 5); }
+
+/* ── TEK reduced-motion kapısı (§15) ──────────────────────────────────────
+   Tüm sistemde bir tane. Yüzeye özel ikinci blok YASAKTIR. */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+  /* "Daha az hareket" ≠ "donmus ekran": loading'de band kalkar, markin
+     kendisi cok yavas nefes alir — ayni anlamin yer degistirmeyen karsiligi. */
+  .loading-mark .beam { animation: none !important; opacity: 0; }
+  .loading-mark .rest {
+    animation: p-mark-breathe 2600ms ease-in-out infinite !important;
+    animation-duration: 2600ms !important;
+    animation-iteration-count: infinite !important;
+  }
+}
+
+/* ══ 4. PRIMITIVE ═══════════════════════════════════════════════════════════
+   Buton · alan · segment · nokta · chip · kbd · menü · modal · durum seti.
+   Modal, dropdown ve form yüzeyleri ORTAK gövdeden doğar — bu yüzden
+   birbirlerine benzerler. Hiçbirinde `border` yok (§1). */
+
+/* ── Butonlar ──────────────────────────────────────────────────────────────
+   Birincil: beyaz zemin + siyah metin. Işık süpürmesi TETİKLENİR (hover'da
+   tek geçiş) — duran butonda sürekli süpürme yasak (§4.1, ilke 1). */
+.btn-primary,
+.btn-ghost,
+.btn-danger {
+  height: 36px;
+  padding: 0 var(--sp-3);
+  border-radius: var(--r-s);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--sp-2);
+  font-size: var(--fs-2);
+  font-weight: 600;
+  position: relative;
+  overflow: hidden;
+  transition: transform var(--dur-press) var(--ease-out),
+    background-color var(--dur-hover) var(--ease-out),
+    color var(--dur-hover) var(--ease-out),
+    opacity var(--dur-hover) var(--ease-out);
+}
+.btn-primary { background: var(--primary); color: var(--on-primary); }
+.btn-primary > span { position: relative; }
+.btn-primary::after {
+  content: "";
+  position: absolute;
+  inset: -40% -10%;
+  transform: translateX(-120%);
+  background: linear-gradient(330deg, transparent 44%, rgba(250, 250, 250, 0.5) 50%, transparent 56%);
+  pointer-events: none;
+}
+@media (hover: hover) and (pointer: fine) {
+  .btn-primary:hover:not(:disabled)::after { animation: p-sweep var(--dur-panel) var(--ease-out) forwards; }
+  .btn-ghost:hover:not(:disabled) { color: var(--text); background: var(--panel); }
+  .btn-danger:hover:not(:disabled) { background: var(--text); }
+}
+.btn-ghost { background: var(--panel-2); color: var(--dim); }
+/* "danger" renkle değil, --red HALKALI nokta ile işaretlenir (§9/GK2b). */
+.btn-danger { background: var(--primary); color: var(--on-primary); }
+.btn-danger .mk {
+  width: 8px; height: 8px; border-radius: 50%; flex: none;
+  background: var(--on-primary); box-shadow: 0 0 0 1px var(--red);
+}
+.btn-primary:active:not(:disabled),
+.btn-ghost:active:not(:disabled),
+.btn-danger:active:not(:disabled) { transform: scale(0.97); }
+.btn-primary:disabled,
+.btn-ghost:disabled,
+.btn-danger:disabled { opacity: 0.45; cursor: not-allowed; }
+
+/* ── İkon butonu (toolbar / satır içi araç) — tek gövde ────────────────── */
+.tool,
+.snm-ic,
+.mid-x,
+.dlg-x,
+.hostrow-edit,
+.hostdel {
+  width: 28px;
+  height: 28px;
+  display: inline-grid;
+  place-items: center;
+  border-radius: var(--r-s);
+  color: var(--dim);
+  transition: transform var(--dur-press) var(--ease-out),
+    background-color var(--dur-hover) var(--ease-out),
+    color var(--dur-hover) var(--ease-out),
+    opacity var(--dur-hover) var(--ease-out);
+}
+@media (hover: hover) and (pointer: fine) {
+  .tool:hover:not(:disabled),
+  .snm-ic:hover,
+  .mid-x:hover,
+  .dlg-x:hover,
+  .hostrow-edit:hover,
+  .hostdel:hover { color: var(--text); background: var(--panel); }
+}
+.tool:active:not(:disabled),
+.snm-ic:active,
+.mid-x:active,
+.dlg-x:active,
+.hostrow-edit:active,
+.hostdel:active { transform: scale(0.97); }
+.tool:disabled { opacity: 0.35; cursor: default; }
+.tool:disabled:hover { color: var(--dim); background: none; }
+
+/* ── Form alanı ────────────────────────────────────────────────────────────
+   `.fwrap` mockup'ın kanonik sarmalayıcısıdır: ışık kenarı ::before ister,
+   <input> ise ::before render etmez. Sarmalayıcısı olmayan alanlar da düz
+   yüzey olarak doğru okur; panel adımlarında tek tek sarılır. */
+.fld { display: block; margin-bottom: var(--sp-3); }
+.fld-k {
+  display: block;
+  font-size: var(--fs-2);
+  font-weight: 600;
+  color: var(--dim);
+  margin-bottom: var(--sp-1);
+}
+/* KONTROL YÜZEYİ — tek kademe, her yerde aynı (§1).
+   Bir alan hangi kabın içinde olursa olsun aynı renkte durur: dinlenen
+   `--panel`, odakta `--panel-2`. Kabına göre kademe kaydırmak, aynı kontrolü
+   iki ekranda iki farklı renk yapıyordu (Login username kutusu vs Ayarlar). */
+.fwrap {
+  position: relative;
+  height: 36px;
+  border-radius: var(--r-s);
+  background: var(--panel);
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  padding: 0 var(--sp-2);
+}
+.fwrap input,
+.fwrap textarea {
+  flex: 1;
+  min-width: 0;
+  background: none;
+  border: none;
+  color: var(--text);
+  font-size: var(--fs-3);
+}
+.fwrap input.mono { font-family: var(--mono); font-size: var(--fs-2); }
+.fwrap input::placeholder,
+.fwrap textarea::placeholder { color: var(--faint); }
+/* Odak: ışık yerine yüzey bir kademe yükselir. Klavye odağı ayrıca global
+   `:focus-visible` halkasını alır (§10) — input'ta `outline: none` YOK. */
+.fwrap:focus-within { background: var(--panel-2); }
+/* Hatalı alan: --red halkalı iç çizgi. Renk tek taşıyıcı değil — alanın
+   altında nokta + düz-dilli mesaj zaten var (§9). */
+.fwrap.bad { box-shadow: inset 0 0 0 1px var(--red); }
+.fwrap.tall { height: auto; padding: var(--sp-2); align-items: stretch; }
+.fwrap.tall textarea { resize: vertical; line-height: 1.5; font-family: var(--mono); font-size: var(--fs-2); }
+
+.fld input,
+.fld textarea,
+.snm-textarea,
+.snm-select,
+.unlock-phrase,
+.addform input {
+  background: var(--panel);
+  border: none;
+  border-radius: var(--r-s);
+  padding: var(--sp-2);
+  color: var(--text);
+  outline: none;
+  font-size: var(--fs-3);
+  width: 100%;
+  transition: background-color var(--dur-hover) var(--ease-out);
+}
+.fld input:focus,
+.fld textarea:focus,
+.snm-textarea:focus,
+.snm-select:focus,
+.unlock-phrase:focus,
+.addform input:focus { background: var(--panel-2); }
+.fld input::placeholder,
+.fld textarea::placeholder,
+.snm-textarea::placeholder,
+.unlock-phrase::placeholder,
+.addform input::placeholder { color: var(--faint); }
+.snm-textarea, .unlock-phrase { resize: vertical; line-height: 1.5; font-family: var(--mono); }
+.snm-select { cursor: pointer; }
+
+/* .fwrap İÇİNDEKİ alan YÜZEY DEĞİLDİR — yüzey sarmalayıcının kendisidir.
+   Yukarıdaki `.addform input` kuralı (aynı özgüllük, daha sonra geldiği için
+   kazanır) alana kendi `--panel` zeminini ve dolgusunu veriyordu; o opak zemin
+   sarmalayıcının `inset` halkasının ÜST ve ALT çizgisini örtüyordu — hatalı alan
+   yalnız sağdan ve soldan kırmızı görünüyordu (yatayda sarmalayıcının 8px dolgusu
+   halkayı açıkta bırakıyor). Aynı zemin `:focus-within` yükselmesini de yutuyordu. */
+.fwrap input,
+.fwrap textarea,
+.fwrap input:focus,
+.fwrap textarea:focus { background: none; padding: 0; }
+
+/* ── Segment anahtarı — §6: kap --r-m, öğeler --r-s (eşit yarıçap düzler) ── */
+.seg {
+  position: relative;
+  display: flex;
+  gap: 2px;
+  padding: 2px;
+  margin-bottom: var(--sp-3);
+  background: var(--panel);
+  border-radius: var(--r-m);
+}
+.seg-b {
+  flex: 1;
+  height: 30px;
+  border-radius: var(--r-s);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--sp-1);
+  font-size: var(--fs-2);
+  font-weight: 600;
+  color: var(--dim);
+  transition: transform var(--dur-press) var(--ease-out),
+    background-color var(--dur-hover) var(--ease-out),
+    color var(--dur-hover) var(--ease-out);
+}
+@media (hover: hover) and (pointer: fine) { .seg-b:hover { color: var(--text); } }
+.seg-b:active { transform: scale(0.97); }
+.seg-b.on { background: var(--panel-2); color: var(--text); }
+
+/* ── Durum noktası (§9) — 8px yuvarlak. Biçim hep aynı; dolgu/opaklık/hareket
+   değişir. Renk yalnız 1px HALKADA görünebilir, asla dolgu olarak. ──────── */
+.dot { width: 8px; height: 8px; border-radius: 50%; flex: 0 0 8px; background: var(--primary); }
+.dot.on { background: var(--primary); }
+.dot.warn { background: var(--primary); box-shadow: 0 0 0 1px var(--amber); }
+.dot.err { background: var(--primary); box-shadow: 0 0 0 1px var(--red); }
+.dot.off { background: var(--faint); opacity: 0.5; }
+.dot.connecting { background: var(--dim); animation: p-pulse var(--dur-pulse) ease-in-out infinite; }
+.dot.attn { background: var(--primary); box-shadow: 0 0 0 1px var(--primary); animation: p-attn var(--dur-gate) ease-in-out 1; }
+/* Optik düzeltme (§5.3): nokta ilk metin satırına matematiksel değil optik hizalanır. */
+.dot.align { margin-top: 4px; }
+
+/* ── Meta çipi — mikro-inset istisnası (§5.3): 2px var(--sp-2) ──────────── */
+.chip {
+  position: relative;
+  display: inline-flex;
+  align-items: baseline;
+  gap: var(--sp-1);
+  padding: 2px var(--sp-2);
+  border-radius: var(--r-m);
+  background: var(--panel);
+}
+.chip .k { font-size: var(--fs-1); color: var(--dim); font-weight: 600; }
+.chip .v { font-size: var(--fs-2); color: var(--text); font-family: var(--mono); }
+
+/* ── kbd ─────────────────────────────────────────────────────────────────── */
+.kbd { display: inline-flex; gap: var(--sp-1); }
+.kbd b {
+  font: 400 var(--fs-1) / 1.3 var(--mono);
+  background: var(--panel-2);
+  border-radius: var(--r-s);
+  padding: 2px var(--sp-2);
+  color: var(--text);
+}
+
+/* ── Durum seti (§12e) — dört desen ───────────────────────────────────────
+   1 boş = davet · 2 idle = bekliyor, düğmesi var · 3 hata = ne oldu + ham
+   metin · 4 yükleniyor = iskelet (dairesel spinner YASAK). */
+.empty,
+.idle,
+.state-err,
+.state-load {
+  position: relative;
+  padding: var(--sp-3);
+  border-radius: var(--r-s);
+  background: var(--panel);
+  line-height: 1.6;
+}
+.empty { font-size: var(--fs-3); color: var(--dim); }
+.empty b { color: var(--text); }
+.empty .mono { color: var(--text); font-size: var(--fs-2); }
+.empty.short { font-size: var(--fs-2); }
+
+.idle {
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: var(--sp-2); text-align: center;
+}
+.idle-t { font-size: var(--fs-3); font-weight: 600; }
+.idle-s { font-size: var(--fs-2); color: var(--dim); }
+
+.state-err { display: flex; align-items: flex-start; gap: var(--sp-2); font-size: var(--fs-3); color: var(--text); }
+.state-err .raw { display: block; margin-top: 2px; font-family: var(--mono); font-size: var(--fs-2); color: var(--dim); word-break: break-word; }
+.state-err .act { margin-top: var(--sp-2); }
+/* Satır içi kısa hata (form altı) — kutu değil, tek satır + simge.
+   Simge dilin geri kalanıyla aynı (§8: lucide, 16, stroke 1.75); rengi --red
+   ama tek taşıyıcı değil: yanındaki düz-dilli mesaj aynı şeyi söylüyor (§9). */
+.err { color: var(--text); font-size: var(--fs-2); display: flex; align-items: flex-start; gap: var(--sp-2); }
+.err-i { flex: none; margin-top: 1px; color: var(--red); }
+.err-t { min-width: 0; }
+
+.state-load { display: flex; flex-direction: column; gap: var(--sp-2); }
+.state-load .load-row { display: flex; align-items: center; gap: var(--sp-2); font-size: var(--fs-2); color: var(--dim); }
+.state-load .load-row .st { width: 8px; height: 8px; border-radius: 50%; background: var(--dim); flex: none; animation: p-pulse var(--dur-pulse) ease-in-out infinite; }
+.skel { display: block; height: 14px; background: var(--panel-2); border-radius: var(--r-s); animation: p-skel var(--dur-pulse) ease-in-out infinite; }
+
+/* ── Marka markı ─────────────────────────────────────────────────────────
+   TEK tanım, her yerde aynı: gerçek varlık CSS mask olarak basılır (§24.2).
+   Ölçüler varlığın GERÇEK alpha bbox'ından ölçüldü; varlık değişirse yeniden
+   ölçülür. `--mark-h` yüksekliği belirler, en/boy ondan türer.
+
+   Tek efekt GLOW'dur. BÖLÜM III glow'u yasaklar; bu, kullanıcı kararıyla
+   açılmış **adlandırılmış tek istisnadır** ve yalnız MARKA markına uygulanır —
+   panelde, butonda, metinde glow hâlâ yasak. Gerekçe: mark tek dekoratif
+   öğedir ve önceki "açıklığa kare girip parıldayan" animasyonun yerini alır. */
+.mark {
+  --mark-h: 26px;
+  --mark-glow: 0.28;
+  display: block; flex: none;
+  height: var(--mark-h);
+  width: calc(var(--mark-h) * 0.5314);   /* ölçülen en÷boy */
+  background: var(--text);
+  -webkit-mask-image: var(--mark-src); mask-image: var(--mark-src);
+  -webkit-mask-repeat: no-repeat; mask-repeat: no-repeat;
+  -webkit-mask-size: 403.15% 214.23%; mask-size: 403.15% 214.23%;
+  -webkit-mask-position: 49.87% 50.18%; mask-position: 49.87% 50.18%;
+  filter: drop-shadow(0 0 calc(var(--mark-h) * 0.14) rgba(250, 250, 250, var(--mark-glow)));
+  transition: filter var(--dur-panel) var(--ease-out);
+}
+/* Açık temada ışık koyu olur — glow da (kaynak --primary'dir, §1). */
+:root[data-theme="paper"] .mark { filter: drop-shadow(0 0 calc(var(--mark-h) * 0.14) rgba(12, 12, 12, var(--mark-glow))); }
+/* Bekleyen durum (vault açılıyor): glow nefes alır. Yer değiştirme yok. */
+.mark.busy { animation: p-mark-glow var(--dur-pulse) ease-in-out infinite; }
+
+/* ── Menü gövdesi (dropdown · arama popover'ı · sağ-tık) ──────────────────
+   Üçü de tek görsel gövde. Popover TETİKLEYİCİSİNDEN büyür: transform-origin
+   her kullanım yerinde ayarlanır (sağ-tık menüsünde imleç köşesi). */
+.menu-dd,
+.search-pop,
+.ctx {
+  position: absolute;
+  background: var(--panel);
+  border-radius: var(--r-m);
+  box-shadow: var(--shadow-pop);
+  padding: var(--sp-1);
+  transform-origin: top left;
+  animation: p-pop-in var(--dur-pop) var(--ease-pop) both;
+}
+.menu-dd { top: 32px; left: 0; z-index: 60; min-width: 214px; }
+.search-pop { top: 32px; left: 0; z-index: 60; width: 300px; }
+.ctx { position: fixed; z-index: 80; min-width: 214px; }
+
+.dd-label,
+.snm-group-h {
+  font-size: var(--fs-2);
+  color: var(--dim);
+  font-weight: 600;
+}
+.dd-label { padding: var(--sp-2) var(--sp-2) var(--sp-1); }
+.dd-item,
+.ctx-item {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  width: 100%;
+  text-align: left;
+  padding: var(--sp-2);
+  border-radius: var(--r-s);
+  color: var(--text);
+  font-size: var(--fs-2);
+  transition: background-color var(--dur-hover) var(--ease-out);
+}
+@media (hover: hover) and (pointer: fine) {
+  .dd-item:hover, .ctx-item:hover { background: var(--panel-2); }
+}
+.dd-item .sc,
+.ctx-item .sc { margin-left: auto; font-family: var(--mono); font-size: var(--fs-1); color: var(--dim); }
+.dd-sep, .ctx-sep { height: 1px; background: var(--border-soft); margin: var(--sp-1) 0; }
+/* Yıkıcı aksiyon: renk değil, --red halkalı nokta (§9). */
+.ctx-item.danger .mk { width: 8px; height: 8px; border-radius: 50%; margin-left: auto; background: var(--primary); box-shadow: 0 0 0 1px var(--red); }
+.dd-wrap { position: relative; display: flex; }
+
+/* Arama popover'ı içi */
+.search-pop .sin {
+  position: relative;
+  display: flex; align-items: center; gap: var(--sp-2);
+  padding: var(--sp-2); border-radius: var(--r-s);
+  background: var(--panel-2); color: var(--dim);
+}
+.search-pop .sin:focus-within { background: var(--panel-2); }
+.search-pop .sin input { flex: 1; min-width: 0; background: none; border: none; color: var(--text); font-size: var(--fs-2); }
+.search-pop .sin input::placeholder { color: var(--faint); }
+.search-pop .sres { margin-top: var(--sp-1); max-height: 220px; overflow: auto; }
+.search-pop .sr {
+  position: relative;
+  display: flex; align-items: center; gap: var(--sp-2);
+  padding: var(--sp-2); border-radius: var(--r-s); cursor: pointer;
+  transition: background-color var(--dur-hover) var(--ease-out);
+}
+.search-pop .sr:hover { background: var(--panel-2); }
+.search-pop .sr .nm { flex: 1; min-width: 0; font-size: var(--fs-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.search-pop .sr .ip { font-family: var(--mono); font-size: var(--fs-2); color: var(--dim); flex: none; }
+.search-pop .sempty { padding: var(--sp-3) var(--sp-2); font-size: var(--fs-2); color: var(--dim); line-height: 1.6; }
+
+/* ── Overlay + modal gövdesi ─────────────────────────────────────────────
+   Modal transform-origin: center — bir tetikleyiciye bağlı değil (popover'ın
+   aksine). Scrim opacity ile, kart ölçekle gelir (§13). */
+.overlay {
+  position: fixed; inset: 0; z-index: 90; background: var(--scrim);
+  display: grid; place-items: center;
+  animation: p-fade var(--dur-pop) var(--ease-out) both;
+}
+/* Palet KENDİSİ animasyonsuz olduğu için scrim'i de kısa alır (ilke 2). */
+.overlay.instant { animation-duration: var(--dur-press); }
+.dialog,
+.settings {
+  position: relative;
+  background: var(--surface);
+  border-radius: var(--r-l);
+  box-shadow: var(--shadow);
+  overflow: hidden;
+  animation: p-modal-in var(--dur-modal) var(--ease-out) both;
+}
+.dialog { width: min(420px, 92vw); }
+.dlg-head { display: flex; align-items: center; gap: var(--sp-2); padding: var(--sp-3); }
+.dlg-title { flex: 1; display: flex; align-items: center; gap: var(--sp-2); font-size: var(--fs-3); font-weight: 600; line-height: 1.3; }
+.dlg-ic-wrap { width: 32px; height: 32px; flex: none; border-radius: var(--r-s); background: var(--panel-2); display: grid; place-items: center; }
+.dlg-ic-wrap.warn { box-shadow: inset 0 0 0 1px var(--red); }
+.dlg-body { padding: 0 var(--sp-3); }
+.dlg-sub { font-family: var(--mono); font-size: var(--fs-2); color: var(--dim); padding: 0 var(--sp-3) var(--sp-3); }
+.dlg-foot { display: flex; justify-content: flex-end; gap: var(--sp-2); padding: var(--sp-3); }
+
+/* ══ 5. KABUK ═══════════════════════════════════════════════════════════════
+   Mockup: docs/mockups/re-desing/01-global-shell.html
+   Paneller YÜZER: gövde `padding` + `gap` taşır, aradan --bg-deep görünür.
+   Kenarlık yalnız yapısal dikişte (pencere çerçevesi, top bar alt dikişi,
+   sash). Aktif/seçili her yerde --panel-2 + üst ışık kenarı ile okunur. */
+
+.app {
+  height: 100vh; display: flex; flex-direction: column;
+  background: var(--bg); overflow: hidden;
+}
+
+/* ── Top bar ──────────────────────────────────────────────────────────────
+   Envanter (GK1): marka · ≡ menü · sidebar toggle · arama · workspace ·
+   sürüm · komut paleti · Docs · Support · 4 tema · min/max/close */
+.topbar {
+  height: 42px; flex: 0 0 42px; display: flex; align-items: center;
+  gap: var(--sp-2); padding: 0 var(--sp-2);
+  position: relative; z-index: 8; white-space: nowrap;
+  background: var(--surface);
+  /* Yapısal dikiş — top bar'ı gövdeden ayırır. Işık kenarı DEĞİL (o model
+     kaldırıldı); `--border-soft` bir çizgi değil, bir katman sınırı. */
+  border-bottom: 1px solid var(--border-soft);
+  user-select: none;
+}
+.topbar * { white-space: nowrap; }
+.tb-brand { display: flex; align-items: center; flex: 0 0 auto; }
+.tb-mark { --mark-h: 26px; margin: 0 var(--sp-1); }
+
+.tb-tools { display: flex; align-items: center; gap: var(--sp-1); flex: 0 0 auto; }
+.tb-btn {
+  height: 28px; min-width: 28px; padding: 0 var(--sp-2);
+  border-radius: var(--r-s);
+  display: inline-flex; align-items: center; justify-content: center; gap: var(--sp-1);
+  color: var(--dim); font-size: var(--fs-2);
+  transition: transform var(--dur-press) var(--ease-out),
+    background-color var(--dur-hover) var(--ease-out),
+    color var(--dur-hover) var(--ease-out);
+}
+@media (hover: hover) and (pointer: fine) {
+  .tb-btn:hover { background: var(--panel); color: var(--text); }
+}
+.tb-btn:active { transform: scale(0.97); }
+.tb-btn.on { background: var(--panel-2); color: var(--text); }
+/* Ölü kontrol (Docs · Support) — eleman duruyor (GK1), işlevsizliği görünür. */
+.tb-btn[aria-disabled="true"] { color: var(--faint); cursor: default; }
+.tb-btn[aria-disabled="true"]:hover { color: var(--faint); background: none; }
+
+/* Host arama tetikleyicisi */
+.tb-search {
+  position: relative; height: 28px; flex: 0 1 190px; min-width: 120px; overflow: hidden;
+  border-radius: var(--r-s); background: var(--panel);
+  display: flex; align-items: center; gap: var(--sp-2); padding: 0 var(--sp-2);
+  color: var(--dim); font-size: var(--fs-2);
+}
+.tb-search .ph { font-family: var(--mono); overflow: hidden; text-overflow: ellipsis; }
+
+/* Workspace + sürüm = VERİ → mono (§7.4) */
+.tb-ws {
+  height: 28px; border-radius: var(--r-s); padding: 0 var(--sp-2);
+  display: flex; align-items: center; gap: var(--sp-1);
+  font-family: var(--mono); font-size: var(--fs-2); color: var(--dim);
+  transition: background-color var(--dur-hover) var(--ease-out);
+}
+.tb-ws b { color: var(--text); font-weight: 500; }
+@media (hover: hover) and (pointer: fine) { .tb-ws:hover { background: var(--panel); } }
+.tb-ver { font-family: var(--mono); font-size: var(--fs-1); color: var(--faint); padding: 0 var(--sp-1); }
+
+.tb-spacer { flex: 1 1 auto; min-width: var(--sp-2); }
+.tb-right { display: flex; align-items: center; gap: var(--sp-1); flex: 0 0 auto; }
+
+/* Komut paleti tetikleyicisi — üst şeridin tek geniş öğesi. */
+.palette-btn {
+  position: relative; height: 28px; flex: 1 1 280px; min-width: 170px; max-width: 400px;
+  overflow: hidden; border-radius: var(--r-s); background: var(--panel);
+  display: flex; align-items: center; gap: var(--sp-2); padding: 0 var(--sp-2);
+  color: var(--dim); font-size: var(--fs-2);
+  transition: color var(--dur-hover) var(--ease-out);
+}
+@media (hover: hover) and (pointer: fine) { .palette-btn:hover { color: var(--text); } }
+.palette-btn .ph { flex: 1; text-align: left; overflow: hidden; text-overflow: ellipsis; }
+
+.tb-divider { width: 1px; height: 16px; background: var(--border); flex: none; margin: 0 var(--sp-1); }
+
+/* Tema — 4 nokta; dolgu farkıyla ayrışır, aktif olan --primary halkalı. */
+.theme-switch { display: flex; gap: 2px; align-items: center; }
+.theme-dot {
+  width: 26px; height: 26px; border-radius: var(--r-s); display: grid; place-items: center;
+  transition: background-color var(--dur-hover) var(--ease-out);
+}
+.theme-dot i { width: 11px; height: 11px; border-radius: 50%; display: block; box-shadow: inset 0 0 0 1px var(--edge); }
+.theme-dot[data-t="black"] i { background: #0a0a0a; }
+.theme-dot[data-t="graphite"] i { background: #8f8f8f; }
+.theme-dot[data-t="paper"] i { background: #ededed; }
+.theme-dot[data-t="contrast"] i { background: linear-gradient(90deg, #000 50%, #fff 50%); }
+@media (hover: hover) and (pointer: fine) { .theme-dot:hover { background: var(--panel); } }
+.theme-dot.on { background: var(--panel-2); }
+.theme-dot.on i { box-shadow: inset 0 0 0 1px var(--primary); }
+
+/* Pencere kontrolleri — WINDOWS konvansiyonu: geniş dikdörtgen hedef + ikon.
+   (Mockup 12px yuvarlak "mac" noktalar öneriyordu; kullanıcı kararıyla
+   platformun kendi dili seçildi — bkz. REDESIGN-PLAN S13.)
+   Basış scale'i YOK: pencere kenarındaki kontrolün küçülmesi hatalı görünür.
+   Yarıçap da yok: kontroller pencerenin köşesine dayanır, yuvarlanınca
+   çerçeveden kopmuş görünürler. */
+.wctrls { display: flex; align-items: center; margin-left: var(--sp-2); flex: none; }
+.wc {
+  width: 44px; height: 42px; flex: none;
+  display: grid; place-items: center;
+  color: var(--dim); background: none; border-radius: 0;
+  transition: background-color var(--dur-hover) var(--ease-out),
+    color var(--dur-hover) var(--ease-out);
+}
+.wc:hover { background: var(--panel-2); color: var(--text); }
+/* Kapatma: Windows'ta kırmızı zemin + beyaz ikon. Renk burada DURUM değil,
+   platform sözleşmesi — kullanıcı bu hedefi kas hafızasıyla arıyor. */
+.wc-close:hover { background: var(--red); color: #fff; }
+
+/* Dar pencerede ne düşer, hangi sırayla: önce komut paletinin yer tutucusu,
+   sonra sürüm, sonra Docs/Support etiketleri (ikonları kalır), sonra host
+   aramasının yazısı ve workspace etiketi. Pencere kontrolleri hiçbir zaman. */
+@media (max-width: 1180px) {
+  .palette-btn .ph { display: none; }
+  .palette-btn { flex: 0 0 auto; min-width: auto; }
+}
+@media (max-width: 1040px) {
+  .tb-ver { display: none; }
+  .tb-btn .tb-lbl { display: none; }
+}
+@media (max-width: 900px) {
+  .tb-search .ph { display: none; }
+  .tb-search { flex: 0 0 28px; min-width: 28px; padding: 0; justify-content: center; }
+  .tb-ws .tb-lbl { display: none; }
+}
+
+/* ── Gövde — paneller yüzer (§1) ──────────────────────────────────────────
+   Ayrım kenarlıkla değil BOŞLUKLA: padding + gap, aradan --bg-deep görünür. */
+/* Oluk pencere gövdesinin kendi rengidir (--bg): saf siyah bir kanal, açık
+   panellerin yanında sert bir sıçrama yapıyordu. Paneller --bg üstünde yüzer.
+   `gap` --sp-1: icon bar ile panel arasındaki boşluk, panelin kendi 4px'lik
+   oluk payıyla toplanıp tam --sp-2 (8px) eder — ne yapışık ne kopuk. */
+.body {
+  flex: 1; display: flex; min-height: 0;
+  background: var(--bg); padding: var(--sp-1); gap: var(--sp-1);
+}
+
+/* ── Icon bar — yüzen panel; aktif öğe --panel-2 + ÜST ışık (§1.1) ──────── */
+.iconbar {
+  position: relative;
+  /* Kendi 4px'lik oluk payı — paneller bunu `.dv-view` dolgusundan alıyor,
+     icon bar dock'un dışında olduğu için buradan alır. Sonuç: çerçevenin her
+     yerinde tam --sp-2 (8px). Sağda pay YOK: aradaki boşluğu panel tamamlar. */
+  margin: var(--sp-1) 0 var(--sp-1) var(--sp-1);
+  width: var(--iconbar); flex: 0 0 var(--iconbar);
+  background: var(--surface); border-radius: var(--r-m);
+  display: flex; flex-direction: column; align-items: center;
+  padding: var(--sp-2) 0; gap: var(--sp-1);
+}
+.ib-sp { flex: 1; }
+.ico {
+  position: relative;
+  width: 38px; height: 38px; border-radius: var(--r-s);
+  display: grid; place-items: center; color: var(--dim);
+  transition: transform var(--dur-press) var(--ease-out),
+    background-color var(--dur-hover) var(--ease-out),
+    color var(--dur-hover) var(--ease-out);
+}
+/* Aktif göstergesi: yürüyen çubuk DEĞİL (§13) — ışık Crossfade ile yer değiştirir. */
+@media (hover: hover) and (pointer: fine) {
+  .ico:hover { color: var(--text); background: var(--panel); }
+}
+.ico:active { transform: scale(0.97); }
+.ico[aria-current="page"] { color: var(--text); background: var(--panel-2); }
+.ico .badge {
+  position: absolute; top: 2px; right: 2px; min-width: 16px; height: 16px;
+  padding: 2px var(--sp-2); border-radius: var(--r-s);
+  background: var(--primary); color: var(--on-primary);
+  font-family: var(--mono); font-size: var(--fs-1); font-weight: 500;
+  line-height: 16px; text-align: center; font-variant-numeric: tabular-nums;
+}
+
+/* ── Status bar ──────────────────────────────────────────────────────────── */
+.statusbar {
+  height: 30px; flex: 0 0 30px; display: flex; align-items: center; gap: var(--sp-2);
+  padding: 0 var(--sp-3); background: var(--bg);
+  border-top: 1px solid var(--border-soft);
+  font-size: var(--fs-2); color: var(--dim); user-select: none;
+  /* Tek satır, istisnasız: sarmasına izin verilirse 30px'lik şeritte iki
+     satıra çıkıp taşıyordu. Yer daralınca kırpılan ilk şey ipucudur. */
+  white-space: nowrap; overflow: hidden;
+}
+.statusbar > * { flex: none; }
+.statusbar .sp { flex: 1; }
+.statusbar .sb-mono { font-family: var(--mono); font-variant-numeric: tabular-nums; }
+.statusbar .sb-seg { display: inline-flex; align-items: center; gap: var(--sp-2); }
+.statusbar .sb-div { color: var(--faint); }
+/* Kalıcı kabukta onboarding ipucu — silinmedi (GK1), kademesi düşürüldü.
+   --faint DEĞİL: okunması gereken metin --dim tabanının altına inemez (§2.1).
+   Ayrışma boyutla değil opaklık ve konumla yapılıyor. */
+.statusbar .hint {
+  color: var(--dim); opacity: 0.72; display: flex; align-items: center; gap: var(--sp-1);
+  flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis;
+}
+.statusbar .hint span { overflow: hidden; text-overflow: ellipsis; }
+/* Teknik segmentler dar pencerede düşer — aktif host her zaman kalır. */
+@media (max-width: 1040px) { .statusbar .sb-tech { display: none; } }
+@media (max-width: 820px) { .statusbar .hint { display: none; } }
+.statusbar .kbd-i {
+  font-family: var(--mono); font-size: var(--fs-1); color: var(--text);
+  background: var(--panel-2); border-radius: var(--r-s); padding: 2px var(--sp-2);
+}
+.statusbar button {
+  color: var(--dim); font-size: var(--fs-2);
+  display: inline-flex; align-items: center; gap: var(--sp-1);
+  transition: color var(--dur-hover) var(--ease-out);
+}
+.statusbar button:hover { color: var(--text); }
+.statusbar .grip { display: inline-flex; color: var(--dim); }
+
+/* ── Dockview ─────────────────────────────────────────────────────────────
+   dockview'ün kendi teması yalnız TAŞIYICI; görünümü buradaki kurallar verir.
+   Gruplar yüzer: her `.dv-view` 4px iç dolgu taşır → komşular arası 8px
+   oluk, aradan --bg-deep görünür (mockup'taki `gap: var(--sp-2)`). */
+.dockhost { flex: 1; min-width: 0; min-height: 0; position: relative; }
+.dockhost > * { height: 100%; min-height: 0; }
+.dockhost.dockview-theme-abyss,
+.dockhost .dv-shell,
+.srv-dock .dv-shell {
+  /* Abyss paletini grileştir → mavi/mor tamamen gider (renk yok kuralı). */
+  --dv-color-abyss-dark: var(--bg);
+  --dv-color-abyss: var(--bg);
+  --dv-color-abyss-light: var(--panel);
+  --dv-color-abyss-lighter: var(--panel-2);
+  --dv-color-abyss-accent: var(--text);
+  --dv-color-abyss-primary-text: var(--text);
+  --dv-color-abyss-secondary-text: var(--dim);
+  --dv-paneview-active-outline-color: var(--text);
+  --dv-tab-group-color-blue: var(--dim);
+  --dv-tab-group-color-cyan: var(--dim);
+  --dv-tab-group-color-purple: var(--dim);
+  --dv-tab-group-color-pink: var(--dim);
+  --dv-tab-group-color-grey: var(--dim);
+  --dv-drag-over-border-color: var(--text);
+  --dv-group-view-background-color: var(--bg);
+  --dv-activegroup-visiblepanel-tab-background-color: var(--panel-2);
+  --dv-activegroup-visiblepanel-tab-color: var(--text);
+  --dv-inactivegroup-visiblepanel-tab-background-color: var(--panel-2);
+  --dv-inactivegroup-visiblepanel-tab-color: var(--dim);
+  --dv-activegroup-hiddenpanel-tab-background-color: transparent;
+  --dv-activegroup-hiddenpanel-tab-color: var(--dim);
+  --dv-inactivegroup-hiddenpanel-tab-background-color: transparent;
+  --dv-inactivegroup-hiddenpanel-tab-color: var(--dim);
+  --dv-separator-border: transparent;
+  --dv-paneview-header-border-color: transparent;
+  --dv-sash-color: transparent;
+  --dv-active-sash-color: var(--edge);
+  --dv-icon-hover-background-color: var(--panel);
+  --dv-scrollbar-background-color: var(--scroll-thumb);
+  --dv-border-radius: var(--r-m);
+  --dv-tab-border-radius: var(--r-s);
+  --dv-tab-margin: 0 2px;
+  --dv-tabs-and-actions-container-height: 44px;
+  --dv-tabs-and-actions-container-background-color: transparent;
+  --dv-drag-over-background-color: var(--sel);
+  --dv-dnd-compass-color: var(--border);
+  --dv-dnd-compass-cell-color: var(--panel);
+  --dv-dnd-compass-active-cell-color: var(--text);
+  --dv-edge-dock-indicator-color: var(--text);
+  /* Ayraci tumuyle kapat: bolmeler kenarlikla degil BOSLUKLA ayrilir (§1). */
+  --dv-separator-border: transparent;
+}
+.dockhost.dockview-theme-abyss { height: 100%; }
+.dockhost .dv-dockview,
+.dockhost .dv-view-container { background-color: var(--bg) !important; }
+/* A) Sekme şeridinin yanındaki boş alan grubun KENDİSİDİR — ayrı bir siyah
+   kanal değil. Zemin devralınır, yüzey tek parça okunur.
+   B) O alandan tutup grubu sürüklemek ("Multiple Panels") kapatıldı: sekme
+   şeridinin boşluğu bir tutamak gibi görünmüyor, öyle davranmamalı. Panel
+   yine SEKMESİNDEN sürüklenerek taşınır. */
+.dockhost .dv-void-container,
+.srv-dock .dv-void-container {
+  background-color: transparent !important;
+  cursor: default;
+}
+/* Oluk: bölmenin kendi 4px dolgusu → komşular arası 8px.
+   `:has(> .dv-groupview)`: dolgu YALNIZ paneli doğrudan taşıyan bölmeye
+   uygulanır. dockview bölmeleri iç içe geçiriyor (dış kabuk → orta kolon →
+   ızgara); her katmana dolgu verilirse oluk katlanarak büyüyordu — icon bar
+   ile ilk panel arası 8px yerine 16px oluyordu. */
+.dockhost .dv-view:has(> .dv-groupview),
+.srv-dock .dv-view:has(> .dv-groupview) { padding: 4px; }
+/* Yüzen panel gövdesi: --surface zemin, --r-m yarıçap, üst ışık kenarı. */
+.dockhost .dv-groupview,
+.srv-dock .dv-groupview {
+  position: relative;
+  background-color: var(--surface) !important;
+  border-radius: var(--r-m);
+  overflow: hidden;
+}
+.dockhost .dv-content-container,
+.srv-dock .dv-content-container { background-color: var(--surface) !important; }
+.dockhost .dv-tabs-and-actions-container,
+.dockhost .dv-tabs-container,
+.srv-dock .dv-tabs-and-actions-container,
+.srv-dock .dv-tabs-container { background-color: transparent !important; }
+.dockhost .dv-tabs-and-actions-container,
+.srv-dock .dv-tabs-and-actions-container {
+  border-bottom: none !important;
+  padding: var(--sp-2) var(--sp-2) 0 !important;
+}
+
+/* Sekme — kenarlık yok; seçili sekme --panel-2 + üst ışık (§13 Crossfade). */
+.dockhost .dv-tab,
+.srv-dock .dv-tab {
+  position: relative;
+  height: 28px;
+  border-radius: var(--r-s);
+  border-right: none !important;
+  background-color: transparent !important;
+  color: var(--dim) !important;
+  font-size: var(--fs-2);
+  transition: background-color var(--dur-hover) var(--ease-out),
+    color var(--dur-hover) var(--ease-out);
+  transition: background-color var(--dur-hover) var(--ease-out),
+    color var(--dur-hover) var(--ease-out);
+}
+.dockhost .dv-tab:hover,
+.srv-dock .dv-tab:hover { background-color: var(--panel) !important; color: var(--text) !important; }
+.dockhost .dv-tab:hover::before,
+.dockhost .dv-tab.dv-active-tab,
+.srv-dock .dv-tab.dv-active-tab { background-color: var(--panel-2) !important; color: var(--text) !important; }
+.dockhost .dv-tab.dv-active-tab::before,
+
+.dockhost .dv-active-group,
+.dockhost .dv-groupview { outline: none !important; box-shadow: none !important; }
+.dockhost .dv-sash { background-color: transparent !important; transition: background-color var(--dur-hover) var(--ease-out); }
+.dockhost .dv-sash:hover, .dockhost .dv-sash.dv-active { background-color: var(--edge) !important; }
+.dv-default-tab-action { color: var(--dim); transition: color var(--dur-hover) var(--ease-out); }
+.dv-default-tab-action:hover { color: var(--text); }
+.dv-panel-content { background: var(--surface); }
+/* Panel gövdesi kolon flex'tir: içindeki tek kaydırma alanı (.hosts / .mon /
+   .home) `flex:1` ile hücreyi doldurur, kaydırmayı O üstlenir. Blok akışta
+   bırakılırsa `flex:1` hiçbir şey yapmaz ve panel içeriği kadar kısa kalırdı. */
+.panelbody {
+  height: 100%; background: var(--surface);
+  display: flex; flex-direction: column; overflow: hidden;
+}
+.panelbody-col { display: flex; flex-direction: column; overflow: hidden; }
+
+/* Sunucu sayfasının İÇ dock alanı (ServerWorkspace). */
+.srv-dock { position: absolute; inset: 0; overflow: hidden; }
+/* TEK pane varken iç dock kendi çerçevesini ÇİZMEZ: sayfayı dolduran o pane
+   panelin kendisidir, panelin içinde ikinci bir kart değil. Aksi halde
+   "kart içinde kart" çıkıyordu — dıştaki yuvarlak panel, 4px oluk, sonra
+   içeride ikinci bir yuvarlak kutu; sekme şeridi de o kutunun üstünde ayrı
+   bir dikdörtgen gibi duruyordu.
+   Kullanıcı pane'i BÖLDÜĞÜNDE `:only-child` düşer → oluk ve yarıçap geri gelir,
+   çünkü o zaman gerçekten yan yana iki yüzey vardır. */
+.srv-dock .dv-view-container > .dv-view:only-child { padding: 0; }
+.srv-dock .dv-view-container > .dv-view:only-child > .dv-groupview { border-radius: 0; }
+/* Özel sekme gövdeleri, dockview'ün kendi .dv-default-tab'ı ile AYNI kutu modelini
+   kullanmak zorunda: height:100% + block-level flex. inline-flex olsaydı satır-içi
+   kutu olarak metin taban çizgisine oturur, .dv-tab'ın line-height'ından artan
+   boşluk kutuyu yukarı iterdi — "Home" ortalı, diğerleri yukarı kaymış görünürdü. */
+.dv-srv-tab, .dv-pane-tab {
+  display: flex; align-items: center; gap: var(--sp-2);
+  height: 100%; max-width: 240px; padding: 0 var(--sp-1); min-width: 0;
+}
+.dv-srv-tab-t { font-family: var(--mono); font-size: var(--fs-2); color: inherit; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dv-pane-tab-t { font-size: var(--fs-2); color: inherit; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* Sekme kapatma — TEK gövde (TabClose). Simge lucide `X` 16/1.75; kutu 20px,
+   28px'lik sekmeye sığsın diye diyalogların 28px'lik kutusundan küçük ama
+   İŞARET aynı. Önceden burada elle yazılmış bir `×` karakteri vardı. */
+.tab-x {
+  width: 20px; height: 20px; border-radius: var(--r-s); flex: none;
+  display: grid; place-items: center;
+  color: var(--faint);
+  transition: transform var(--dur-press) var(--ease-out),
+    background-color var(--dur-hover) var(--ease-out),
+    color var(--dur-hover) var(--ease-out);
+}
+.tab-x:hover { color: var(--text); background: var(--panel); }
+.tab-x:active { transform: scale(0.97); }
+.dv-pane-tab-fixed { padding-right: var(--sp-2); }
+
+/* Panel içeriği girişi — Fade in + 4px yükselme (§13). HER dock panelinin
+   gövdesine uygulanır: sekme değiştirmek ya da bir paneli açmak "anında yer
+   değiştiren blok" gibi duruyordu; 200ms'lik giriş neyin değiştiğini gösterir.
+   Yalnız transform+opacity (§11.4). */
+.panelbody { animation: p-rise var(--dur-panel) var(--ease-out) both; }
+/* §7.3 — panel etiketi: cümle düzeni, 600, --dim. UPPERCASE tracked YOK. */
+.plabel { font-size: var(--fs-2); font-weight: 600; color: var(--dim); padding: var(--sp-2); }
+
+/* Geri yüklenmiş ama bağlanmamış pane'in bekleme kartı (idle deseni, §12e). */
+.pane-idle {
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: var(--sp-2); text-align: center; padding: var(--sp-5) var(--sp-4); color: var(--dim);
+  animation: p-rise var(--dur-panel) var(--ease-out) both;
+}
+.pane-idle-t { font-size: var(--fs-3); font-weight: 600; color: var(--text); }
+.pane-idle-s { font-size: var(--fs-2); color: var(--dim); max-width: 340px; line-height: 1.6; }
+
+/* ── Sürükle-bırak (dockview DnD) ────────────────────────────────────────
+   Sekmeler sürüklenerek taşınır/dock edilir. Bunu KEŞFEDİLEBİLİR kılan şey
+   imleç: pointer değil grab. */
+.dockhost .dv-tab,
+.srv-dock .dv-tab { cursor: grab; }
+.dockhost .dv-tab:active,
+.srv-dock .dv-tab:active { cursor: grabbing; }
+/* Kapatma (×) ve sekme içi düğmelerde grab imleci yanıltıcı olur. */
+.tab-x, .dv-default-tab-action { cursor: pointer; }
+
+/* ⚠️ BURAYA `pointer-events: none` KOYMA — iç dock'ta bırakmayı TAMAMEN bozar.
+   Sunucu sayfası `renderer:"always"` olduğu için İÇ dock, DIŞ dock'un
+   `.dv-render-overlay` katmanının İÇİNDE yaşar. Katmanı olaylara kapatmak iç
+   dock'un tüm drop hedeflerini de isabet testinden çıkarır: dockview hedefi
+   `elementsFromPoint` ile arar (PointerDragController._findTargetUnder), liste
+   boş döner, ne gösterge çıkar ne bırakma olur. Dış dock etkilenmez (grupları
+   overlay'in içinde değil) — "dışarısı çalışıyor, içerisi çalışmıyor" tablosu
+   tam olarak buydu. Tarayıcıda A/B ölçüldü.
+
+   Tutunca "panel küçülüp elimde" hissi: yalnız transform+opacity — bunlar isabet
+   testini etkilemez, ölçüldü. transform !important gerekli: dockview overlay'e
+   inline `translate3d(0,0,0)` yazıyor. */
+.dv-render-overlay {
+  transition: transform var(--dur-pop) var(--ease-out), opacity var(--dur-pop) var(--ease-out);
+}
+/* Sunucu sayfası `renderer:"always"` ile açılır: içeriği grubun İÇİNDE değil,
+   üstündeki bu katmanda yaşar — yani grubun `overflow:hidden` kırpmasının
+   dışında. Katman kare olduğu için panelin yuvarlak ALT köşelerini örtüyordu
+   ("root açılınca orası dikdörtgen kalıyor"). Katman sekme şeridinin altından
+   başlar, bu yüzden yalnız alt köşeler yuvarlanır.
+   `pointer-events` DEĞİL `overflow`: aşağıdaki uyarı hâlâ geçerli. */
+.dockhost .dv-render-overlay {
+  border-radius: 0 0 var(--r-m) var(--r-m);
+  overflow: hidden;
+}
+.dv-dragging .dv-render-overlay {
+  transform: scale(0.99) !important;
+  opacity: 0.85;
+}
+
+/* Sürüklenen sekmenin hayaleti: yüzeyden kopmuş görünsün. */
+.dv-tab-ghost-drag {
+  background: var(--panel) !important;
+  border-radius: var(--r-s);
+  box-shadow: var(--shadow-pop);
+  opacity: 0.92;
+}
+.dv-tab-ghost-drag::after { outline-color: var(--edge) !important; }
+
+/* Bırakma hedefi göstergesi — monokrom: ince beyaz kenar + çok hafif dolgu. */
+.dockhost, .srv-dock {
+  --dv-drag-over-border: 1px solid var(--text);
+  --dv-drag-over-border-color: var(--text);
+  --dv-drag-over-background-color: var(--sel);
+}
+/* dockview varsayılanı: anchor 300ms ve opacity'de EASE-IN kullanıyor. İkisi de
+   kuralımıza aykırı (300ms altı · ease-in yok) → yeniden tanımlanıyor. */
+.dv-drop-target-container { --dv-transition-duration: var(--dur-pop); }
+/* Bırakma göstergesinin biçimi SONUCU anlatır:
+     · sekme şeridinde  → ÇİZGİ. Sekme araya girecek, bir alan kaplamayacak;
+       çizgi tam olarak "buraya girer" der ve nereye gireceğini gösterir.
+     · panel olarak      → DİKDÖRTGEN. Kaplayacağı alan gerçekten o kadardır.
+   İkisi farklı sonuç, farklı biçim. Aynı saydam kareyi ikisine de koymak
+   "nereye gireceğini" söylemiyordu. */
+.dockhost .dv-tabs-and-actions-container .dv-drop-target-selection,
+.srv-dock .dv-tabs-and-actions-container .dv-drop-target-selection {
+  position: relative;
+  background-color: transparent !important;
+  border: none !important;
+}
+.dockhost .dv-tabs-and-actions-container .dv-drop-target-selection::after,
+.srv-dock .dv-tabs-and-actions-container .dv-drop-target-selection::after {
+  content: "";
+  position: absolute; top: 4px; bottom: 4px; width: 2px;
+  background: var(--primary); border-radius: 2px;
+}
+/* Ekleme noktası: sekmenin sağına / soluna, boş alanda son sekmenin ardına. */
+.dockhost .dv-tabs-and-actions-container .dv-drop-target-right::after,
+.srv-dock .dv-tabs-and-actions-container .dv-drop-target-right::after { right: -1px; }
+.dockhost .dv-tabs-and-actions-container .dv-drop-target-left::after,
+.srv-dock .dv-tabs-and-actions-container .dv-drop-target-left::after { left: -1px; }
+.dockhost .dv-tabs-and-actions-container .dv-drop-target-small-vert::after,
+.srv-dock .dv-tabs-and-actions-container .dv-drop-target-small-vert::after { left: -1px; }
+
+/* §11.4 — top/left/width/height animasyonu YASAK (layout thrashing).
+   dockview varsayılanı bu dördünü de oynatıyor; gösterge konumunu anında
+   alsın, yalnız belirmesi animasyonlansın. */
+.dv-drop-target-container .dv-drop-target-anchor {
+  border-radius: var(--r-s);
+  transition: opacity var(--dur-pop) var(--ease-out);
+}
+.dv-drop-target > .dv-drop-target-dropzone > .dv-drop-target-selection { border-radius: var(--r-s); }
+
+/* Sekme yeniden sıralanırken kayma — dockview varsayılanı 200ms ease-out; kendi
+   eğrimize bağlanır ve yalnız transform oynar (margin geçişleri layout tetikler). */
+.dockhost .dv-tab.dv-tab--shifting,
+.srv-dock .dv-tab.dv-tab--shifting {
+  will-change: transform;
+  transition: transform var(--dur-pop) var(--ease-out);
+}
+
+/* ══ 6. PANEL ═══════════════════════════════════════════════════════════════ */
+
+/* ── Hosts paneli ────────────────────────────────────────────────────────
+   Mockup: 06-dashboard-hosts.html (liste) + 07-host-form.html (form).
+   Satırlar inset YUVARLAK yüzeydir (§5.1), kenardan kenara hat değil;
+   seçili satır --panel-2 + üst ışık (yürüyen çubuk YOK, §13). */
+.hosts { flex: 1; min-height: 0; overflow: auto; padding: var(--sp-2); }
+.search {
+  position: relative; height: 36px; border-radius: var(--r-s); background: var(--panel);
+  display: flex; align-items: center; gap: var(--sp-2); padding: 0 var(--sp-2);
+  margin-bottom: var(--sp-2); color: var(--dim);
+}
+/* Odak: yüzey bir kademe yükselir (ışık kenarı kaldırıldı — §10 görünür
+   alternatif kuralı). Klavye odağı ayrıca global :focus-visible halkasını alır. */
+.search:focus-within { background: var(--panel-2); }
+.search input {
+  flex: 1; min-width: 0; background: none; border: none;
+  color: var(--text); font-size: var(--fs-2);
+}
+.search input::placeholder { color: var(--faint); }
+.side-tools { display: flex; align-items: center; gap: var(--sp-2); margin-bottom: var(--sp-3); }
+.side-tools .sp { flex: 1; }
+.side-tools .btn-primary { height: 32px; white-space: nowrap; }
+
+/* §7.3 — cümle düzeni grup başlığı. */
+.grouphdr {
+  display: flex; align-items: center; gap: var(--sp-1); padding: var(--sp-2);
+  font-size: var(--fs-2); font-weight: 600; color: var(--dim); user-select: none;
+}
+.grouphdr .caret {
+  display: grid; place-items: center; width: 16px; height: 16px; color: var(--dim);
+  transition: transform var(--dur-pop) var(--ease-out);
+}
+.grouphdr.collapsed .caret { transform: rotate(-90deg); }
+.grouphdr .gname { text-transform: none; letter-spacing: 0; }
+.grouphdr .cnt { margin-left: auto; font-family: var(--mono); font-weight: 400; font-variant-numeric: tabular-nums; }
+
+.hostrow {
+  position: relative; display: flex; align-items: center; gap: var(--sp-2);
+  padding: var(--sp-2); border-radius: var(--r-s); cursor: pointer; user-select: none;
+  transition: transform var(--dur-press) var(--ease-out),
+    background-color var(--dur-hover) var(--ease-out),
+    opacity var(--dur-hover) var(--ease-out);
+  animation: p-rise var(--dur-panel) var(--ease-out) both;
+}
+/* Kademeli giriş (§13 Stagger) — yalnız ilk sekiz satır gecikir; iki yüz host'ta
+   liste saniyelerce akmasın diye gerisi hemen gelir. */
+.hostrow:nth-child(2) { animation-delay: calc(var(--dur-reveal) * 1); }
+.hostrow:nth-child(3) { animation-delay: calc(var(--dur-reveal) * 2); }
+.hostrow:nth-child(4) { animation-delay: calc(var(--dur-reveal) * 3); }
+.hostrow:nth-child(5) { animation-delay: calc(var(--dur-reveal) * 4); }
+.hostrow:nth-child(6) { animation-delay: calc(var(--dur-reveal) * 5); }
+.hostrow:nth-child(7) { animation-delay: calc(var(--dur-reveal) * 6); }
+.hostrow:nth-child(n + 8) { animation-delay: calc(var(--dur-reveal) * 7); }
+/* Basış: satır da bir kontroldür — tıklandığını hissettirir (§9). */
+.hostrow:active { transform: scale(0.99); }
+@media (hover: hover) and (pointer: fine) {
+  .hostrow:hover { background: var(--panel); }
+}
+.hostrow.sel { background: var(--panel-2); }
+.hostrow.off { opacity: 0.55; }
+.h-name {
+  display: flex; align-items: center; gap: var(--sp-2);
+  font-size: var(--fs-3); font-weight: 500; line-height: 1.3;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.h-sub {
+  font-family: var(--mono); font-size: var(--fs-2); color: var(--dim); line-height: 1.3;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.h-conn { color: var(--dim); }
+/* Mikro-inset istisnası (§5.3). Renk taşımaz — sadece bir etiket (GK2b). */
+.h-auto {
+  font-family: var(--mono); font-size: var(--fs-1); color: var(--dim);
+  background: var(--panel-2); border-radius: var(--r-s);
+  padding: 2px var(--sp-2); flex: none; line-height: 1.4;
+  text-transform: none; letter-spacing: 0; font-weight: 400;
+}
+/* Eski: Edit/Delete 22px hedef, 4px aralık — §10 en az 24×24px ve yan yana
+   yıkıcı aksiyonlar arasında en az --sp-2 boşluk ister. */
+.hrow-actions {
+  display: flex; gap: var(--sp-1); flex: none; opacity: 0;
+  transition: opacity var(--dur-hover) var(--ease-out);
+}
+.hostrow:hover .hrow-actions,
+.hostrow:focus-within .hrow-actions { opacity: 1; }
+.hostrow-edit:hover, .hostdel:hover { color: var(--text); background: var(--panel-2); }
+/* Tazeleme dugmesinin tek turu (SpinButton). */
+.spin-i.on { animation: p-spin var(--dur-spin) var(--ease-in-out) 1; }
+
+/* ── Host ekle/düzenle formu ─────────────────────────────────────────────
+   Mockup: 07-host-form.html. Gruplama: nereye bağlanılıyor (Connection) →
+   nasıl görünüyor (Appearance) → nasıl davranıyor (Behaviour). Alan sırası
+   ve etiketlerin tek kelimesi değişmedi (GK1); eklenen yalnız gruplama. */
+/* Form bir KAP değil, panelin içinde bir BÖLGE: kendi zemini yok. Zemini
+   olsaydı alanları ondan ayırmak için kademe kaydırmak gerekirdi — kontroller
+   de her ekranda başka renge düşerdi. Bölgeyi başlığı ve boşluğu ayırır. */
+.addform {
+  position: relative; border-radius: var(--r-s);
+  padding: var(--sp-3) 0 var(--sp-2); margin-bottom: var(--sp-2);
+  animation: p-form-in var(--dur-panel) var(--ease-out) both;
+}
+.addform.shake { animation: p-shake var(--dur-shake) var(--ease-in-out) 3; }
+.form-title { font-size: var(--fs-3); font-weight: 600; margin-bottom: var(--sp-3); }
+.grp { margin-bottom: var(--sp-3); }
+.grp:last-of-type { margin-bottom: 0; }
+.grp-k { display: block; font-size: var(--fs-2); font-weight: 600; color: var(--dim); margin-bottom: var(--sp-2); }
+
+.hf { display: block; margin-bottom: var(--sp-2); }
+.hf-k {
+  display: flex; align-items: baseline; gap: var(--sp-2);
+  font-size: var(--fs-2); font-weight: 600; color: var(--dim); margin-bottom: var(--sp-1);
+  text-transform: none; letter-spacing: 0;
+}
+.hf-opt { font-weight: 400; color: var(--faint); text-transform: none; letter-spacing: 0; }
+.hf-k .sp { flex: 1; }
+.hf-link {
+  margin-left: auto; font-size: var(--fs-2); font-weight: 400; color: var(--dim);
+  text-transform: none; letter-spacing: 0; text-decoration: none;
+  transition: color var(--dur-hover) var(--ease-out);
+}
+.hf-link:hover { color: var(--text); }
+/* Form alanları panelin üstünde yaşıyor → yüzeyleri bir kademe yukarıda. */
+
+.addform .fwrap input { font-family: var(--mono); font-size: var(--fs-3); }
+.addform .fwrap input::placeholder { font-family: var(--sans); }
+.addform .row { display: flex; gap: var(--sp-2); margin-top: var(--sp-3); }
+.addform .row .btn-primary { flex: 1; }
+.addform .err { margin-top: var(--sp-2); }
+
+/* "Shows as …" toggle + onay kutusu — aynı gövde. */
+.hf-toggle, .hf-check {
+  position: relative; display: flex; width: 100%; align-items: center; gap: var(--sp-2);
+  padding: var(--sp-2); border-radius: var(--r-s); background: var(--panel);
+  font-size: var(--fs-2); color: var(--dim); text-align: left; line-height: 1.4;
+  transition: transform var(--dur-press) var(--ease-out),
+    color var(--dur-hover) var(--ease-out),
+    background-color var(--dur-hover) var(--ease-out);
+}
+@media (hover: hover) and (pointer: fine) {
+  .hf-toggle:hover, .hf-check:hover { color: var(--text); background: var(--panel-2); }
+}
+.hf-toggle:active, .hf-check:active { transform: scale(0.99); }
+.hf-toggle b { color: var(--text); font-family: var(--mono); font-weight: 400; }
+.hf-check b { color: var(--text); font-weight: 600; }
+.hf-check.on { color: var(--text); }
+/* §6 yarıçap 8/10/14 · §8 ikon 16/20. Tik `scale()` ile gelmiyor (ölçülen
+   boyutu 16'nın altına düşürürdü); opaklık + 2px yükselme ile geliyor. */
+.hf-box {
+  width: 20px; height: 20px; flex: none; border-radius: var(--r-s);
+  background: var(--panel-2); box-shadow: inset 0 0 0 1px var(--edge);
+  display: grid; place-items: center; color: var(--on-primary); overflow: hidden;
+  transition: background-color var(--dur-press) var(--ease-out);
+}
+.hf-check.on .hf-box { background: var(--primary); box-shadow: inset 0 0 0 1px var(--primary); }
+.hf-box svg {
+  opacity: 0; translate: 0 2px;
+  transition: opacity var(--dur-press) var(--ease-out), translate var(--dur-press) var(--ease-out);
+}
+.hf-check.on .hf-box svg { opacity: 1; translate: 0 0; }
+
+/* ── Home ────────────────────────────────────────────────────────────────
+   Mockup: 05-home.html. G5'in kapandığı yer: eski `.home-inner` 860px
+   max-width ile ortalanmıştı — 1600px ekranda iki yanda 370px ölü boşluk.
+   §5.1 TEK-X yasası: panel dock hücresini doldurur, HER metin --inset'ten
+   başlar, `max-width` ve ortalanmış kolon yasak. */
+.subtabs { flex: none; display: flex; gap: var(--sp-1); padding: var(--sp-2) var(--sp-2) 0; }
+.stab {
+  position: relative;
+  height: 28px; padding: 0 var(--sp-3); display: inline-flex; align-items: center;
+  border-radius: var(--r-s); color: var(--dim); font-size: var(--fs-2);
+  transition: transform var(--dur-press) var(--ease-out),
+    background-color var(--dur-hover) var(--ease-out),
+    color var(--dur-hover) var(--ease-out);
+}
+@media (hover: hover) and (pointer: fine) { .stab:hover { color: var(--text); background: var(--panel); } }
+.stab:active { transform: scale(0.97); }
+.stab.active { color: var(--text); background: var(--panel-2); }
+.subhr { display: none; }
+
+.home { flex: 1; min-height: 0; overflow-y: auto; padding: var(--sp-4) var(--inset) var(--sp-5); }
+
+/* Karşılama */
+.greet h1 { margin: 0; font-size: var(--fs-6); font-weight: 600; letter-spacing: -0.02em; line-height: 1.1; }
+.subgreet {
+  display: flex; align-items: center; gap: var(--sp-2); flex-wrap: wrap;
+  margin-top: var(--sp-2); font-size: var(--fs-2); color: var(--dim);
+}
+.subgreet .sep { color: var(--faint); }
+.subgreet .live { display: inline-flex; align-items: center; gap: var(--sp-2); }
+
+/* Quick connect */
+.qc { display: flex; gap: var(--sp-2); margin-top: var(--sp-4); max-width: 720px; }
+.quickconnect {
+  position: relative; flex: 1; height: 44px; border-radius: var(--r-s);
+  background: var(--panel); display: flex; align-items: center;
+  gap: var(--sp-2); padding: 0 var(--sp-3);
+}
+.quickconnect svg { color: var(--dim); flex: none; }
+.quickconnect:focus-within { background: var(--panel-2); }
+.quickconnect input {
+  flex: 1; min-width: 0; height: 100%; background: none; border: none;
+  color: var(--text); font-family: var(--mono); font-size: var(--fs-3);
+}
+.quickconnect input::placeholder { color: var(--faint); font-family: var(--sans); }
+/* Mikro-inset istisnası (§5.3). */
+.hintk {
+  font-family: var(--mono); font-size: var(--fs-1); color: var(--dim);
+  background: var(--panel-2); border-radius: var(--r-s);
+  padding: 2px var(--sp-2); line-height: 1; flex: none;
+  display: inline-flex; align-items: center;
+}
+/* Kahraman birincil buton (44px) — sayfadaki TEK beyaz dolgu. 30° süpürme
+   yalnız hover'da TEK geçiş; duran butonda sürekli süpürme yasak (§4.1). */
+.btn-hero {
+  position: relative; overflow: hidden;
+  height: 44px; padding: 0 var(--sp-4); flex: none;
+  display: inline-flex; align-items: center; gap: var(--sp-2);
+  background: var(--primary); color: var(--on-primary); border-radius: var(--r-s);
+  font-size: var(--fs-3); font-weight: 600;
+  transition: transform var(--dur-press) var(--ease-out);
+}
+.btn-hero svg, .btn-hero span { position: relative; }
+.btn-hero::after {
+  content: ""; position: absolute; inset: -40% -10%; transform: translateX(-120%);
+  background: linear-gradient(330deg, transparent 44%, rgba(250, 250, 250, 0.5) 50%, transparent 56%);
+  pointer-events: none;
+}
+@media (hover: hover) and (pointer: fine) {
+  .btn-hero:hover::after { animation: p-sweep var(--dur-panel) var(--ease-out) forwards; }
+}
+.btn-hero:active { transform: scale(0.97); }
+.qc-err {
+  display: flex; align-items: flex-start; gap: var(--sp-2); margin-top: var(--sp-2);
+  font-size: var(--fs-2); color: var(--text);
+  animation: p-rise var(--dur-panel) var(--ease-out) both;
+}
+
+/* System band — altı yüzen segment (§1: kenarlık yok, üst ışık kenarı). */
+.sysband { display: grid; grid-template-columns: repeat(6, 1fr); gap: var(--sp-2); margin-top: var(--sp-4); }
+.sysseg { position: relative; background: var(--panel); border-radius: var(--r-s); padding: var(--sp-3); min-width: 0; }
+/* §7.3 — cümle düzeni etiket; UPPERCASE tracked YOK. */
+.sysseg .u {
+  display: flex; align-items: center; gap: var(--sp-1);
+  font-size: var(--fs-2); font-weight: 600; color: var(--dim);
+  text-transform: none; letter-spacing: 0;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.sysseg .val {
+  display: flex; align-items: center; gap: var(--sp-1); margin-top: var(--sp-2);
+  font-size: var(--fs-4); font-weight: 600; color: var(--text); line-height: 1.1;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.sysseg .val.num { font-family: var(--mono); font-weight: 400; font-variant-numeric: tabular-nums; }
+/* Birim ekleri (d / h / m, "/ 4") sayıdan bir kademe geri çekilir. */
+.sysseg .val small { font-size: var(--fs-2); color: var(--dim); font-weight: 400; }
+.sysseg .val.sm { font-size: var(--fs-3); }
+.sysseg .sub {
+  display: block; margin-top: var(--sp-1); font-size: var(--fs-2); color: var(--dim);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+
+/* Bölüm kabuğu */
+.sect { margin-top: var(--sp-5); }
+.sect-head { display: flex; align-items: baseline; gap: var(--sp-2); margin-bottom: var(--sp-2); }
+.sect-head .sh { font-size: var(--fs-3); font-weight: 600; color: var(--text); text-transform: none; letter-spacing: 0; }
+.sect-head .cnt { font-family: var(--mono); font-size: var(--fs-2); color: var(--dim); }
+.sect-head .sp { flex: 1; }
+.link {
+  display: inline-flex; align-items: center; gap: var(--sp-1); color: var(--dim);
+  font-size: var(--fs-2);
+  transition: color var(--dur-hover) var(--ease-out);
+}
+.link:hover { color: var(--text); }
+
+/* Attention needed — eski `.alert` aynı gerçeği DÖRT kez kodluyordu (kenarlık +
+   yüzey + 3px renkli şerit + color-mix ikon çipi). Burada TEK sinyal: ışık
+   kenarının şiddeti (§1). Renk taşıyıcı değil (GK2b). */
+.alert {
+  position: relative; display: flex; align-items: center; gap: var(--sp-3);
+  background: var(--panel); border-radius: var(--r-s);
+  padding: var(--sp-3); margin-bottom: var(--sp-2);
+}
+.alert .ai {
+  width: 32px; height: 32px; flex: none; border-radius: var(--r-s);
+  background: var(--panel-2); display: grid; place-items: center; color: var(--dim);
+}
+.alert.crit .ai { color: var(--text); }
+.alert .txt { flex: 1; min-width: 0; }
+.alert .at { font-size: var(--fs-3); font-weight: 500; line-height: 1.35; }
+.alert .asub {
+  font-family: var(--mono); font-size: var(--fs-2); color: var(--dim); margin-top: 2px;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.alert .abtn {
+  height: 32px; padding: 0 var(--sp-3); flex: none; border-radius: var(--r-s);
+  background: var(--panel-2); color: var(--text); font-size: var(--fs-2); font-weight: 600;
+  transition: transform var(--dur-press) var(--ease-out),
+    background-color var(--dur-hover) var(--ease-out);
+}
+.alert.crit .abtn { background: var(--primary); color: var(--on-primary); }
+@media (hover: hover) and (pointer: fine) {
+  .alert .abtn:hover { background: var(--panel); }
+  .alert.crit .abtn:hover { background: var(--text); }
+}
+.alert .abtn:active { transform: scale(0.97); }
+
+/* Alt iki kolon — eski 1.35fr/1fr idi ve GENİŞ kolon AZ içerik taşıyordu. */
+.lower { display: grid; grid-template-columns: 1fr 1fr; gap: var(--sp-4); align-items: start; }
+
+/* Recently added */
+.recent-list, .feed { display: flex; flex-direction: column; gap: 2px; }
+.rrow {
+  position: relative; display: flex; align-items: center; gap: var(--sp-2);
+  padding: var(--sp-2); border-radius: var(--r-s); cursor: pointer;
+  text-align: left; width: 100%;
+  transition: transform var(--dur-press) var(--ease-out),
+    background-color var(--dur-hover) var(--ease-out);
+}
+@media (hover: hover) and (pointer: fine) {
+  .rrow:hover { background: var(--panel); }
+}
+.rrow:active { transform: scale(0.99); }
+.rrow .av {
+  width: 32px; height: 32px; flex: none; border-radius: var(--r-s);
+  background: var(--panel-2); display: grid; place-items: center;
+  font-family: var(--mono); font-size: var(--fs-2); font-weight: 500; color: var(--dim);
+}
+.rrow .rn2 { flex: 1; min-width: 0; }
+.rrow .rn {
+  font-size: var(--fs-3); font-weight: 500; line-height: 1.3;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.rrow .ra {
+  font-family: var(--mono); font-size: var(--fs-2); color: var(--dim); line-height: 1.3;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.rrow .rt { font-family: var(--mono); font-size: var(--fs-2); color: var(--dim); flex: none; }
+
+/* Favorites — chip */
+.fav-wrap { display: flex; flex-wrap: wrap; gap: var(--sp-2); }
+.fav {
+  position: relative; display: inline-flex; align-items: center; gap: var(--sp-2);
+  height: 36px; padding: 0 var(--sp-3); border-radius: var(--r-s); background: var(--panel);
+  transition: transform var(--dur-press) var(--ease-out),
+    background-color var(--dur-hover) var(--ease-out);
+}
+@media (hover: hover) and (pointer: fine) {
+  .fav:hover { background: var(--panel-2); }
+}
+.fav:active { transform: scale(0.97); }
+.fav .star { color: var(--text); display: grid; place-items: center; }
+.fav .star svg { fill: currentColor; stroke: currentColor; }
+.fav .fn { font-size: var(--fs-3); font-weight: 500; }
+.fav .fa { font-family: var(--mono); font-size: var(--fs-2); color: var(--dim); }
+/* Eski: 22px hedef, 4px aralık, opacity:0 — hedef kazası (§10 en az 24×24px).
+   Burada 32px hedef ve HER ZAMAN görünür. */
+.fav-toggle {
+  width: 32px; height: 32px; flex: none; border-radius: var(--r-s);
+  display: grid; place-items: center; color: var(--faint);
+  transition: transform var(--dur-press) var(--ease-out),
+    color var(--dur-hover) var(--ease-out), background-color var(--dur-hover) var(--ease-out);
+}
+.fav-toggle:hover { color: var(--text); background: var(--panel-2); }
+.fav-toggle.on { color: var(--text); }
+.fav-toggle.on svg { fill: currentColor; }
+.fav-toggle:active { transform: scale(0.97); }
+
+/* Recent activity feed */
+/* Satır bir düğmedir: kaydın doğduğu yüzeye geri götürür. */
+.actrow {
+  display: flex; align-items: baseline; gap: var(--sp-3);
+  width: 100%; text-align: left; padding: var(--sp-2); border-radius: var(--r-s);
+  cursor: pointer;
+  transition: transform var(--dur-press) var(--ease-out),
+    background-color var(--dur-hover) var(--ease-out);
+}
+@media (hover: hover) and (pointer: fine) { .actrow:hover { background: var(--panel); } }
+.actrow:active { transform: scale(0.99); }
+.actrow .ft { font-family: var(--mono); font-size: var(--fs-2); color: var(--dim); flex: none; width: 72px; }
+.actrow .fmid { display: flex; align-items: center; gap: var(--sp-2); min-width: 0; }
+.actrow .fh { font-size: var(--fs-3); font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.actrow .fk { display: inline-flex; align-items: center; gap: var(--sp-1); font-size: var(--fs-2); color: var(--dim); flex: none; }
+
+/* ── Dashboard alt sekmesi ───────────────────────────────────────────────
+   Mockup: 06-dashboard-hosts.html. Home ile aynı ızgara ve tek-x yasası. */
+.dash { flex: 1; min-height: 0; overflow: auto; padding: var(--sp-4) var(--inset) var(--sp-5); }
+
+.cards { display: grid; grid-template-columns: repeat(4, 1fr); gap: var(--sp-2); }
+.card { position: relative; background: var(--panel); border-radius: var(--r-s); padding: var(--sp-3); min-width: 0; }
+.card .u {
+  display: block; font-size: var(--fs-2); font-weight: 600; color: var(--dim);
+  text-transform: none; letter-spacing: 0;
+}
+.card .big {
+  display: block; margin-top: var(--sp-2); font-family: var(--mono);
+  font-size: var(--fs-6); font-weight: 400; line-height: 1; letter-spacing: -0.02em;
+  font-variant-numeric: tabular-nums;
+}
+.card .foot { display: block; margin-top: var(--sp-2); font-size: var(--fs-2); color: var(--dim); }
+
+.block { margin-top: var(--sp-5); }
+.block > h3 {
+  display: flex; align-items: baseline; gap: var(--sp-2); margin: 0 0 var(--sp-2);
+  font-size: var(--fs-3); font-weight: 600; color: var(--text);
+  text-transform: none; letter-spacing: 0;
+}
+.block > h3 .more { font-family: var(--mono); font-size: var(--fs-2); color: var(--dim); font-weight: 400; }
+.li {
+  position: relative; display: flex; align-items: center; gap: var(--sp-2);
+  padding: var(--sp-2); border-radius: var(--r-s);
+  transition: background-color var(--dur-hover) var(--ease-out),
+    opacity var(--dur-hover) var(--ease-out);
+}
+@media (hover: hover) and (pointer: fine) {
+  .li:hover { background: var(--panel); }
+}
+.li.click { cursor: pointer; }
+.li.click:active { transform: scale(0.99); }
+.li.off { opacity: 0.55; }
+.li .nm { font-size: var(--fs-3); font-weight: 500; line-height: 1.3; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.li .ip { font-family: var(--mono); font-size: var(--fs-2); color: var(--dim); line-height: 1.3; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.li .tag { margin-left: auto; font-family: var(--mono); font-size: var(--fs-2); color: var(--dim); flex: none; white-space: nowrap; }
+.avatar {
+  width: 32px; height: 32px; flex: none; border-radius: var(--r-s);
+  background: var(--panel-2); display: grid; place-items: center;
+  font-family: var(--mono); font-size: var(--fs-2); font-weight: 500; color: var(--dim);
+}
+
+/* ── Guide rail ──────────────────────────────────────────────────────────
+   Mockup: 04-guide.html. G8'in en ağır örneğiydi: soru başlıkları 9.5px
+   UPPERCASE --faint (2.70:1) idi. Öğretme katmanının metni okunmak İÇİN
+   vardır → --fs-3 / 600 / --text, cevaplar --dim (6.04:1). */
+.guide-body {
+  height: 100%; overflow: auto; background: var(--surface);
+  padding: 0 var(--sp-3) var(--sp-3);
+  animation: p-rise var(--dur-panel) var(--ease-out) both;
+}
+/* §7.3 — UPPERCASE tracked etiket kaldırıldı; cümle düzeni. */
+.tour { display: flex; align-items: center; gap: var(--sp-2); padding: var(--sp-2) var(--sp-1) var(--sp-3); }
+.tour .step {
+  width: 20px; height: 20px; flex: none; border-radius: var(--r-s);
+  background: var(--primary); color: var(--on-primary);
+  display: grid; place-items: center; font-size: var(--fs-2); font-weight: 600; line-height: 1;
+}
+.tour .tt { font-size: var(--fs-2); font-weight: 600; color: var(--dim); }
+.tour .ts { display: none; }
+/* Konu kartı — §1: kenarlık YOK, yüzey + üst ışık kenarı. */
+.guide-card {
+  position: relative; background: var(--panel); border-radius: var(--r-s); padding: var(--sp-3);
+  animation: p-rise var(--dur-panel) var(--ease-out) both;
+}
+.gc-h { display: flex; align-items: center; gap: var(--sp-2); margin-bottom: var(--sp-3); }
+.qmark {
+  width: 20px; height: 20px; flex: none; border-radius: 50%;
+  background: var(--panel-2); color: var(--dim);
+  display: grid; place-items: center; font-size: var(--fs-2); font-weight: 600; line-height: 1;
+}
+/* Konu başlığı mikro-etiket DEĞİL, kartın konusu → okunur boyut + --text. */
+.gc-h .gt { font-size: var(--fs-4); font-weight: 600; color: var(--text); line-height: 1.25; }
+
+/* Blok girişi: Stagger of Fade in (§13) — 20ms adım. */
+.gc-b .blk { animation: p-rise var(--dur-panel) var(--ease-out) both; }
+.gc-b .blk:nth-child(2) { animation-delay: calc(var(--dur-reveal) * 1); }
+.gc-b .blk:nth-child(3) { animation-delay: calc(var(--dur-reveal) * 2); }
+.gc-b .blk + .blk { margin-top: var(--sp-3); }
+.gc-b .q { font-size: var(--fs-3); font-weight: 600; color: var(--text); line-height: 1.35; margin: 0 0 var(--sp-1); }
+.gc-b .a { font-size: var(--fs-3); font-weight: 400; color: var(--dim); line-height: 1.6; margin: 0; }
+.gc-b .a .mono { color: var(--text); font-size: var(--fs-2); }
+
+.guide-note {
+  position: relative; margin-top: var(--sp-3); padding: var(--sp-3) var(--sp-1) 0;
+  font-size: var(--fs-2); color: var(--dim); line-height: 1.6;
+}
+.guide-note::before {
+  content: ""; position: absolute; top: 0; left: var(--sp-1); right: var(--sp-1);
+  height: 1px; background: var(--border-soft);
+}
+.guide-note b { color: var(--text); font-weight: 600; }
+
+/* Konu seçici — rail'in altında. Aktif pencereyi takip eden bir yüzeye "başka
+   bir şeye de bakabilirim" kapısı açar; seçili konu --panel-2 ile işaretlenir. */
+.guide-pick { margin-top: var(--sp-3); padding: var(--sp-3) var(--sp-1) 0; position: relative; }
+.guide-pick::before {
+  content: ""; position: absolute; top: 0; left: var(--sp-1); right: var(--sp-1);
+  height: 1px; background: var(--border-soft);
+}
+.guide-pick-k { display: block; font-size: var(--fs-2); font-weight: 600; color: var(--dim); margin-bottom: var(--sp-2); }
+.guide-pick-row { display: flex; flex-wrap: wrap; gap: var(--sp-1); }
+.guide-pick-b {
+  height: 28px; padding: 0 var(--sp-2); border-radius: var(--r-s);
+  background: var(--panel); color: var(--dim); font-size: var(--fs-2);
+  transition: transform var(--dur-press) var(--ease-out),
+    color var(--dur-hover) var(--ease-out),
+    background-color var(--dur-hover) var(--ease-out);
+}
+@media (hover: hover) and (pointer: fine) { .guide-pick-b:hover { color: var(--text); background: var(--panel-2); } }
+.guide-pick-b:active { transform: scale(0.97); }
+.guide-pick-b.on { background: var(--panel-2); color: var(--text); }
+
+/* ── Gateway ─────────────────────────────────────────────────────────────
+   Mockup: 12a-gateway.html. Portal'ı Portal yapan yüzey (DESIGN §18): ham
+   shell'e düşmeden önce sade dilli bir karşılama. Cesaretin tamamı burada;
+   gerisi sessiz. §5.1 gereği ORTALANMIŞ KOLON YOK — panel hücresini doldurur,
+   her metin --inset'ten başlar. */
+.gw-body {
+  flex: 1; min-height: 0; height: 100%; overflow: auto; background: var(--surface);
+  padding: var(--sp-5) var(--inset) var(--sp-5);
+}
+.gw-status { display: inline-flex; align-items: center; gap: var(--sp-2); font-size: var(--fs-2); color: var(--dim); text-transform: none; letter-spacing: 0; font-weight: 400; }
+.gw-head h1, .gw-id h1 {
+  margin: var(--sp-2) 0 var(--sp-1);
+  font-size: var(--fs-6); font-weight: 600; letter-spacing: -0.02em; line-height: 1.1;
+}
+.gw-who { font-family: var(--mono); font-size: var(--fs-3); color: var(--dim); }
+
+.gw-chips { display: flex; flex-wrap: wrap; gap: var(--sp-2); margin-top: var(--sp-4); }
+.gw-chips .chip {
+  display: block; align-items: initial;
+  background: var(--panel); border-radius: var(--r-s);
+  padding: var(--sp-2) var(--sp-3); min-width: 0;
+}
+.gw-chips .chip .k { display: block; font-size: var(--fs-2); font-weight: 600; color: var(--dim); }
+.gw-chips .chip .v { display: block; margin-top: 2px; font-size: var(--fs-3); line-height: 1.3; color: var(--text); font-family: var(--sans); }
+.gw-chips .chip .v.mono { font-family: var(--mono); }
+
+/* Üç büyük aksiyon — İMZA. */
+.gw-actions { display: grid; grid-template-columns: repeat(3, 1fr); gap: var(--sp-2); margin-top: var(--sp-4); }
+.gw-act {
+  position: relative; overflow: hidden;
+  display: flex; flex-direction: column; align-items: flex-start; gap: var(--sp-1);
+  padding: var(--sp-3); border-radius: var(--r-s); background: var(--panel);
+  color: var(--text); text-align: left; border: none;
+  transition: transform var(--dur-press) var(--ease-out),
+    background-color var(--dur-hover) var(--ease-out);
+}
+@media (hover: hover) and (pointer: fine) {
+  .gw-act:hover { background: var(--panel-2); }
+}
+.gw-act:active { transform: scale(0.98); }
+.gw-act > svg { position: relative; margin-bottom: var(--sp-1); }
+.gw-act-t { position: relative; font-size: var(--fs-4); font-weight: 600; letter-spacing: -0.02em; line-height: 1.2; }
+.gw-act-s { position: relative; font-size: var(--fs-2); color: var(--dim); line-height: 1.4; }
+/* Birincil: beyaz dolgu + 30° süpürme (hover, TEK geçiş — §4.1). */
+.gw-act.primary { background: var(--primary); color: var(--on-primary); }
+.gw-act.primary::before { opacity: 0; }
+.gw-act.primary .gw-act-s { color: rgba(10, 10, 10, 0.62); }
+.gw-act.primary::after {
+  content: ""; position: absolute; inset: -40% -10%; transform: translateX(-120%);
+  background: linear-gradient(330deg, transparent 44%, rgba(250, 250, 250, 0.5) 50%, transparent 56%);
+  pointer-events: none;
+}
+@media (hover: hover) and (pointer: fine) {
+  .gw-act.primary:hover { background: var(--text); }
+  .gw-act.primary:hover::after { animation: p-sweep var(--dur-panel) var(--ease-out) forwards; }
+}
+/* Bağlıyken Connect sakinleşir — davet bitti, kapı zaten açık (§14). */
+.gw-act.primary.calm { background: var(--panel-2); color: var(--text); }
+.gw-act.primary.calm .gw-act-s { color: var(--dim); }
+.gw-act.primary.calm::after { display: none; }
+@media (hover: hover) and (pointer: fine) { .gw-act.primary.calm:hover { background: var(--panel); } }
+
+/* Saved commands bloğu */
+.gw-body .block h3 > svg { color: var(--dim); flex: none; }
+.blk-add {
+  margin-left: auto; height: 28px; padding: 0 var(--sp-2); border-radius: var(--r-s);
+  background: var(--panel); display: inline-flex; align-items: center; gap: var(--sp-1);
+  font-size: var(--fs-2); font-weight: 600; color: var(--dim);
+  text-transform: none; letter-spacing: 0; border: none;
+  transition: transform var(--dur-press) var(--ease-out),
+    color var(--dur-hover) var(--ease-out), background-color var(--dur-hover) var(--ease-out);
+}
+.blk-add:hover { color: var(--text); background: var(--panel-2); }
+.blk-add:active { transform: scale(0.97); }
+
+.snip { gap: var(--sp-2); padding: 0; }
+.snip-go {
+  flex: 1; min-width: 0; display: flex; align-items: center; gap: var(--sp-2);
+  padding: var(--sp-2); text-align: left; color: var(--text);
+}
+.snip-run {
+  width: 32px; height: 32px; flex: none; border-radius: var(--r-s); background: var(--panel-2);
+  display: grid; place-items: center; color: var(--dim);
+  transition: background-color var(--dur-hover) var(--ease-out), color var(--dur-hover) var(--ease-out);
+}
+.snip:hover .snip-run { background: var(--primary); color: var(--on-primary); }
+.snip .min0 .ip .c { color: var(--text); }
+/* Mikro-inset istisnası (§5.3). */
+.snip .tag {
+  font-family: var(--mono); font-size: var(--fs-1); color: var(--dim);
+  background: var(--panel-2); border-radius: var(--r-s); padding: 2px var(--sp-2); flex: none;
+  margin-left: 0;
+}
+.snip-tools {
+  display: flex; gap: var(--sp-1); flex: none; padding-right: var(--sp-2); opacity: 0;
+  transition: opacity var(--dur-hover) var(--ease-out);
+}
+.snip:hover .snip-tools, .snip:focus-within .snip-tools { opacity: 1; }
+/* Host silinmişse — panelin tamamı. */
+.gw-gone { height: 100%; display: grid; place-items: center; padding: var(--sp-5); text-align: center; font-size: var(--fs-3); color: var(--dim); }
+
+/* ── Terminal ────────────────────────────────────────────────────────────
+   Mockup: 08-terminal.html. Terminalin İÇİ tip sisteminin ve monokrom
+   kuralının DIŞINDADIR (§7.5 / §1): zemin saf siyah, renkler uzak shell'in
+   gerçek ANSI'si, font 13px/1.2 — xterm yapılandırmasıyla aynı. Portal'ın
+   kabuğu dışarıda monokrom kalır; terminal yüzeyi bir ada gibi yüzer. */
+.term-wrap {
+  position: relative; flex: 1; min-height: 0; height: 100%;
+  margin: var(--sp-2); border-radius: var(--r-s); overflow: hidden; background: #000;
+}
+.term-host { position: absolute; inset: 0; padding: var(--sp-2); }
+.term-host .xterm { height: 100%; }
+
+/* Overlay — idle / connecting / error / closed. */
+.term-overlay {
+  position: absolute; inset: 0; z-index: 4; display: grid; place-items: center;
+  background: rgba(0, 0, 0, 0.72);
+  animation: p-fade var(--dur-panel) var(--ease-out) both;
+}
+.term-status { display: flex; align-items: center; gap: var(--sp-2); font-size: var(--fs-3); color: var(--dim); }
+.term-status .st {
+  width: 8px; height: 8px; border-radius: 50%; background: var(--dim); flex: none;
+  animation: p-pulse var(--dur-pulse) ease-in-out infinite;
+}
+.term-card {
+  position: relative; background: var(--panel); border-radius: var(--r-m);
+  padding: var(--sp-4); min-width: 320px; max-width: 420px; text-align: center;
+  box-shadow: var(--shadow);
+  animation: p-modal-in var(--dur-modal) var(--ease-out) both;
+}
+/* Hata: düz-dilli başlık üstte (--text), ham teknik metin altta (mono + --dim).
+   Renk tek taşıyıcı değil — nokta + --red halka (§9). */
+.term-err {
+  display: flex; align-items: flex-start; gap: var(--sp-2); text-align: left;
+  font-size: var(--fs-3); color: var(--text); line-height: 1.5; margin-bottom: var(--sp-3);
+}
+.term-err .mk {
+  width: 8px; height: 8px; border-radius: 50%; background: var(--primary); flex: none;
+  margin-top: 4px; box-shadow: 0 0 0 1px var(--red);
+}
+.term-err .raw {
+  display: block; margin-top: var(--sp-1); font-family: var(--mono);
+  font-size: var(--fs-2); color: var(--dim); word-break: break-word;
+}
+.term-dim { font-size: var(--fs-3); color: var(--dim); margin-bottom: var(--sp-3); line-height: 1.5; }
+
+/* ── Files (iki panel + transfer kuyruğu) ────────────────────────────────
+   Mockup: 09-files.html. İki panel ve transfer kuyruğu birer YÜZEN yüzey:
+   ayrım kenarlıkla değil boşlukla (§1). Sürükle-bırak hedefi kesikli
+   kenarlıkla değil ışık kenarının --lit-3'e çıkmasıyla işaretlenir. */
+.files {
+  flex: 1; min-height: 0; display: flex; flex-direction: column;
+  padding: var(--sp-2); gap: var(--sp-2); height: 100%; background: var(--surface);
+}
+.files-panes { flex: 1; min-height: 0; display: flex; gap: var(--sp-2); align-items: stretch; }
+
+.fpane {
+  position: relative; flex: 1; min-width: 0; min-height: 0;
+  display: flex; flex-direction: column;
+  background: var(--panel); border-radius: var(--r-s); overflow: hidden;
+  transition: background-color var(--dur-hover) var(--ease-out);
+}
+.fpane.drop { background: var(--panel-2); }
+.fpane.drop::after {
+  content: "Drop to transfer"; position: absolute; inset: auto 0 0 0;
+  padding: var(--sp-2); text-align: center; font-size: var(--fs-2); font-weight: 600;
+  color: var(--on-primary); background: var(--primary); z-index: 4;
+  animation: p-drop-in var(--dur-pop) var(--ease-out) both;
+}
+
+.fpane-head { flex: none; display: flex; align-items: center; gap: var(--sp-2); padding: var(--sp-2); }
+.fpane-head > svg { color: var(--dim); flex: none; }
+/* §7.3 — cümle düzeni; UPPERCASE tracked YOK. */
+.fpane-t {
+  flex: 1; min-width: 0; font-size: var(--fs-2); font-weight: 600; color: var(--dim);
+  text-transform: none; letter-spacing: 0;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.up-btn {
+  width: auto; padding: 0 var(--sp-2); gap: var(--sp-1);
+  display: inline-flex; align-items: center; justify-content: center;
+  font-size: var(--fs-2); font-weight: 600; background: var(--panel-2);
+}
+.up-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+
+/* Yol satırı — yüzey, kenarlık değil. */
+.fpath {
+  position: relative; flex: none; height: 30px;
+  margin: 0 var(--sp-2) var(--sp-2); border-radius: var(--r-s);
+  background: var(--panel-2); display: flex; align-items: center; padding: 0 var(--sp-2);
+  font-family: var(--mono); font-size: var(--fs-2); color: var(--text);
+  white-space: nowrap; overflow: hidden;
+}
+.fpath:focus-within { background: var(--panel-2); }
+.fpath-edit {
+  flex: 1; min-width: 0; background: none; border: none;
+  color: var(--text); font-family: var(--mono); font-size: var(--fs-2);
+}
+.fpath-edit::placeholder { color: var(--faint); }
+.crumbs { gap: 2px; overflow-x: auto; }
+.crumbs::-webkit-scrollbar { height: 0; }
+.crumb {
+  font-family: var(--mono); font-size: var(--fs-2); color: var(--dim);
+  padding: 2px var(--sp-1); border-radius: var(--r-s); white-space: nowrap;
+  transition: color var(--dur-hover) var(--ease-out);
+}
+.crumb:hover { color: var(--text); }
+.crumb:last-child { color: var(--text); }
+.crumb-seg { display: inline-flex; align-items: center; }
+.crumb-sep { color: var(--faint); flex: none; }
+
+/* Dosya listesi — satırlar inset yuvarlak yüzey (§5.1). */
+.flist { flex: 1; min-height: 0; overflow: auto; padding: 0 var(--sp-2) var(--sp-2); }
+.frow {
+  position: relative; display: flex; align-items: center; gap: var(--sp-2);
+  height: 30px; padding: var(--sp-1) var(--sp-2); border-radius: var(--r-s);
+  cursor: default; user-select: none;
+  transition: background-color var(--dur-hover) var(--ease-out),
+    opacity var(--dur-hover) var(--ease-out);
+}
+/* Hover bir kademe altta kalır: seçili satır (--panel-2) ondan ayrışsın. */
+@media (hover: hover) and (pointer: fine) { .frow:hover { background: var(--panel); } }
+.frow.sel { background: var(--panel-2); }
+.frow.dragging { opacity: 0.5; }
+.frow[draggable="true"] { cursor: grab; }
+.frow[draggable="true"]:active { cursor: grabbing; }
+.ficon { color: var(--text); flex: none; }
+.ficon.dim { color: var(--dim); }
+.fname { flex: 1; min-width: 0; font-size: var(--fs-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.fsize { font-family: var(--mono); font-size: var(--fs-2); color: var(--dim); flex: none; font-variant-numeric: tabular-nums; }
+
+/* Orta aktarma sütunu */
+.files-mid {
+  flex: none; width: 44px; display: flex; flex-direction: column;
+  align-items: center; justify-content: center; gap: var(--sp-2);
+}
+.mid-x {
+  position: relative; width: 36px; height: 36px; border-radius: var(--r-s);
+  background: var(--panel); display: grid; place-items: center; color: var(--dim);
+}
+@media (hover: hover) and (pointer: fine) {
+  .mid-x:hover:not(:disabled) { color: var(--text); background: var(--panel-2); }
+}
+.mid-x:disabled { opacity: 0.35; cursor: not-allowed; }
+/* Etkin yön: hedef panel işaretliyken ok aydınlanır. */
+.mid-x.armed { color: var(--on-primary); background: var(--primary); }
+.mid-x.armed::before { opacity: 0; }
+
+/* Bağlanıyor satırı */
+.conn-row { display: flex; align-items: center; gap: var(--sp-2); padding: var(--sp-3); font-size: var(--fs-2); color: var(--dim); }
+.conn-row .st {
+  width: 8px; height: 8px; border-radius: 50%; background: var(--dim); flex: none;
+  animation: p-pulse var(--dur-pulse) ease-in-out infinite;
+}
+
+/* ── Transfer kuyruğu ───────────────────────────────────────────────────── */
+.xfers {
+  position: relative; flex: none; height: 180px; background: var(--panel);
+  border-radius: var(--r-s); display: flex; flex-direction: column; overflow: hidden;
+  animation: p-rise var(--dur-panel) var(--ease-out) both;
+}
+.xfers-head {
+  flex: none; display: flex; align-items: center; gap: var(--sp-2);
+  padding: var(--sp-2) var(--sp-3); font-size: var(--fs-2); font-weight: 600; color: var(--dim);
+}
+/* Mikro-inset istisnası (§5.3). */
+.xfers-badge {
+  font-family: var(--mono); font-size: var(--fs-1); color: var(--on-primary);
+  background: var(--primary); border-radius: var(--r-s);
+  padding: 2px var(--sp-2); font-weight: 500;
+  text-transform: none; letter-spacing: 0;
+}
+.xfers-list { flex: 1; min-height: 0; overflow: auto; padding: 0 var(--sp-2) var(--sp-2); }
+.xfers-empty { padding: var(--sp-3); font-size: var(--fs-2); color: var(--dim); line-height: 1.6; }
+.xfers-empty b { color: var(--text); }
+.xfer {
+  display: flex; align-items: center; gap: var(--sp-2); padding: var(--sp-2);
+  border-radius: var(--r-s);
+  animation: p-rise var(--dur-panel) var(--ease-out) both;
+}
+.xfer:hover { background: var(--panel-2); }
+.xfer-dir {
+  width: 28px; height: 28px; flex: none; border-radius: var(--r-s);
+  background: var(--panel-2); display: grid; place-items: center; color: var(--dim);
+}
+.xfer-body { flex: 1; min-width: 0; }
+.xfer-top { display: flex; align-items: baseline; gap: var(--sp-2); }
+.xfer-name { flex: 1; min-width: 0; font-size: var(--fs-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.xfer-stat { font-family: var(--mono); font-size: var(--fs-2); color: var(--dim); flex: none; font-variant-numeric: tabular-nums; }
+/* İlerleme: scaleX — ASLA width (§13).
+   3px yükseklikte --r-s (8px) yarıçap kırpılır → hap biçimi; yeni değer gerekmez. */
+.xfer-bar { height: 3px; margin-top: var(--sp-1); border-radius: var(--r-s); background: var(--panel-2); overflow: hidden; }
+.xfer-fill {
+  display: block; height: 100%; width: 100%; background: var(--primary);
+  transform-origin: left; transform: scaleX(0);
+  transition: transform var(--dur-panel) var(--ease-out);
+}
+.xfer-fill.s-done { background: var(--dim); }
+.xfer-fill.s-failed { background: var(--primary); box-shadow: 0 0 0 1px var(--red); }
+.xfer-fill.s-cancelled { background: var(--faint); }
+/* Aktif transfer: barın üstünde 30° tarama (§4) — düz bar değil. */
+.xfer-fill.s-active { position: relative; overflow: hidden; }
+.xfer-fill.s-active::after {
+  content: ""; position: absolute; inset: 0;
+  background: repeating-linear-gradient(330deg, rgba(10, 10, 10, 0.28) 0 6px, transparent 6px 12px);
+  animation: p-hatch var(--dur-hatch) linear infinite;
+}
+
+/* ── Monitor ─────────────────────────────────────────────────────────────
+   Mockup: 12c-monitor.html. Eşik aşıldığında DEĞER beyaz kalır; uyarıyı
+   ışık kenarının yükselmesi + --amber HALKALI nokta taşır (GK2b: renk
+   hiçbir zaman tek taşıyıcı değil). §5.1: max-width ve ortalama yok. */
+.mon { flex: 1; min-height: 0; overflow: auto; padding: var(--sp-3) var(--sp-3) var(--sp-4); }
+
+.mon-status { display: flex; align-items: center; gap: var(--sp-2); padding: var(--sp-3); font-size: var(--fs-2); color: var(--dim); }
+.mon-status .st { width: 8px; height: 8px; border-radius: 50%; background: var(--dim); flex: none; animation: p-pulse var(--dur-pulse) ease-in-out infinite; }
+.mon-status.err { color: var(--text); align-items: flex-start; }
+.mon-status.err .st { background: var(--primary); box-shadow: 0 0 0 1px var(--red); animation: none; margin-top: 4px; }
+.mon-status.err .raw { display: block; margin-top: 2px; font-family: var(--mono); font-size: var(--fs-2); color: var(--dim); word-break: break-word; }
+
+.mon-cards { display: grid; grid-template-columns: repeat(4, 1fr); gap: var(--sp-2); }
+.mcard { position: relative; background: var(--panel); border-radius: var(--r-s); padding: var(--sp-3); min-width: 0; }
+.mcard .u, .mseg .u {
+  display: block; font-size: var(--fs-2); font-weight: 600; color: var(--dim);
+  text-transform: none; letter-spacing: 0;
+}
+.mbig {
+  display: block; margin-top: var(--sp-2); font-family: var(--mono);
+  font-size: var(--fs-6); font-weight: 400; line-height: 1; letter-spacing: -0.02em;
+  color: var(--text); font-variant-numeric: tabular-nums;
+}
+.mbig.sm { font-size: var(--fs-5); }
+.mbig.warn { display: flex; align-items: center; gap: var(--sp-2); color: var(--text); }
+.mbig .mk { width: 8px; height: 8px; border-radius: 50%; background: var(--primary); flex: none; box-shadow: 0 0 0 1px var(--amber); }
+.mfoot { display: block; margin-top: var(--sp-2); font-size: var(--fs-2); color: var(--dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mfoot.mono { font-family: var(--mono); }
+/* Ag hizi satirlarinin yon simgesi: mono rakamlarla ayni cizgide dursun. */
+.mbig .mk-i, .mfoot .mk-i { vertical-align: -2px; color: var(--dim); }
+
+/* Sparkline — uPlot; çizgi kalınlığı 1.5 (§8 istisnası: grafik çizgisi ikon değil). */
+.spark { display: block; width: 100%; height: 46px; margin-top: var(--sp-2); }
+.spark .uplot, .spark .u-wrap { width: 100% !important; }
+
+/* Bar — scaleX, ASLA width (§13). */
+.mbar { height: 4px; margin-top: var(--sp-2); border-radius: var(--r-s); background: var(--panel-2); overflow: hidden; }
+.mbar-fill {
+  display: block; height: 100%; width: 100%; background: var(--text);
+  transform-origin: left; transition: transform var(--dur-panel) var(--ease-out);
+}
+.mbar-fill.warn { background: var(--primary); box-shadow: 0 0 0 1px var(--amber); }
+
+.mon-strip { display: grid; grid-template-columns: repeat(4, 1fr); gap: var(--sp-2); margin-top: var(--sp-2); }
+.mseg { position: relative; background: var(--panel); border-radius: var(--r-s); padding: var(--sp-2) var(--sp-3); min-width: 0; border: none; }
+.mseg .v { display: block; margin-top: 2px; font-size: var(--fs-3); color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mseg .v.mono { font-family: var(--mono); font-variant-numeric: tabular-nums; }
+
+.mblock { margin-top: var(--sp-4); background: none; border: none; border-radius: 0; overflow: visible; }
+.mblock-h {
+  display: flex; align-items: baseline; gap: var(--sp-2); padding: 0;
+  font-size: var(--fs-3); font-weight: 600; color: var(--text);
+  margin-bottom: var(--sp-2); border-bottom: none;
+  text-transform: none; letter-spacing: 0;
+}
+.mblock-sub { font-size: var(--fs-2); color: var(--dim); font-weight: 400; font-family: var(--sans); text-transform: none; letter-spacing: 0; }
+
+.disks { display: grid; grid-template-columns: repeat(2, 1fr); gap: var(--sp-2); padding: 0; }
+.disk { position: relative; background: var(--panel); border-radius: var(--r-s); padding: var(--sp-3); min-width: 0; }
+.disk-top { display: flex; align-items: baseline; gap: var(--sp-2); margin-bottom: 0; }
+.disk-mount { flex: 1; min-width: 0; font-family: var(--mono); font-size: var(--fs-3); font-weight: 400; color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.disk-fs { flex: none; font-family: var(--mono); font-size: var(--fs-2); color: var(--dim); }
+.disk-pct { flex: none; display: inline-flex; align-items: center; gap: var(--sp-1); font-family: var(--mono); font-size: var(--fs-3); font-weight: 400; color: var(--text); font-variant-numeric: tabular-nums; }
+.disk-pct .mk { width: 8px; height: 8px; border-radius: 50%; background: var(--primary); box-shadow: 0 0 0 1px var(--amber); }
+.disk-foot { margin-top: var(--sp-1); font-family: var(--mono); font-size: var(--fs-2); color: var(--dim); }
+
+/* İşlem tablosu — `border` yalnız veri tablosunda yaşayabilir (§1). */
+.proc { width: 100%; border-collapse: collapse; font-size: var(--fs-2); }
+.proc th {
+  text-align: left; font-size: var(--fs-2); font-weight: 600; color: var(--dim);
+  padding: var(--sp-1) var(--sp-2); border-bottom: 1px solid var(--border);
+  text-transform: none; letter-spacing: 0;
+}
+.proc th.num, .proc td.num { text-align: right; font-family: var(--mono); font-variant-numeric: tabular-nums; }
+.proc td { padding: var(--sp-1) var(--sp-2); border-bottom: 1px solid var(--border-soft); color: var(--text); line-height: 1.5; }
+.proc tr:last-child td { border-bottom: none; }
+.proc td.mono { font-family: var(--mono); }
+.proc td.dim { color: var(--dim); }
+.proc td.warn { display: flex; align-items: center; justify-content: flex-end; gap: var(--sp-1); color: var(--text); font-weight: 400; }
+.proc td.warn .mk { width: 8px; height: 8px; border-radius: 50%; background: var(--primary); box-shadow: 0 0 0 1px var(--amber); flex: none; }
+.proc-cmd { max-width: 0; width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--dim); }
+.proc-empty {
+  position: relative; padding: var(--sp-3); border-radius: var(--r-s); background: var(--panel);
+  font-size: var(--fs-2); color: var(--dim); line-height: 1.6;
+}
+.proc-empty .mono { color: var(--text); }
+
+/* İskelet — Skeleton (§13), dairesel spinner YASAK. */
+.skel-big { height: 34px; width: 60%; margin-top: var(--sp-2); }
+.skel-bar { height: 46px; width: 100%; margin-top: var(--sp-2); }
+.skel-foot { height: 12px; width: 45%; margin-top: var(--sp-2); }
+
+/* -- Uptime -------------------------------------------------------------
+   Liste sol sutunda yasar ve Hosts'un satir primitive'lerini (.hostrow /
+   .h-name / .h-sub) kullanir — burada yalnizca ONA EKLENEN parcalar var.
+   Bir monitorun verisi merkezdeki sayfada (MonitorPage) Monitor panelinin
+   kart primitive'leriyle (.mcard / .mbig / .mblock) cizilir.
+   Renk tek tasiyici degil: cubugun DOLULUGU da ayni seyi soyler (§9). */
+
+/* HTTP/TCP ve sunucu secimi: ayarlarin segment kontrolu tekrar kullanilir. */
+.upkind { display: flex; gap: var(--sp-1); margin-bottom: var(--sp-2); }
+.upkind.wrap { flex-wrap: wrap; }
+
+/* Uptime satiri: bugunun yuzdesi satirin SAG ucunda, sabit genislikte bir
+   kolon — rakamlar alt alta hizali okunsun diye tabular. Eylemler onun ustune
+   hover'da biniyor; sayiya bakarken fare satirda olmuyor. */
+.up-pct { flex: none; width: 56px; text-align: right; color: var(--dim); font-variant-numeric: tabular-nums; }
+
+/* Durum simgesi (StateIcon) — nokta yerine biçim: tik / unlem / kesikli daire.
+   Renk hala var ama tek tasiyici degil (§9). */
+.st-i { flex: none; }
+.st-up { color: var(--dim); }
+.st-down { color: var(--red); }
+.st-off { color: var(--faint); }
+
+/* Eylemler satirin USTUNDE durur, yaninda degil: sol sutun 232px ve uc dugmeye
+   yer acmak ismi 26px'e dusuruyordu. Normalde gorunmez ve yer kaplamaz; hover'da
+   kendi zemininde belirip adresin sag ucunu orter. */
+.uprow .hrow-actions {
+  position: absolute; right: var(--sp-1); top: 50%;
+  transform: translateY(-50%);
+  background: var(--panel-2); border-radius: var(--r-s); padding: 2px;
+}
+
+/* Kontrol seridi: her cubuk bir kontrol; dolu = ayakta, kisa/solgun = hata. */
+.upbars { display: flex; align-items: flex-end; gap: 1px; height: 20px; }
+.upbars.tall { height: 40px; flex-wrap: nowrap; }
+.upb { width: 3px; height: 40%; border-radius: 2px; background: var(--faint); flex: none; }
+.upb.on { height: 100%; background: var(--dim); }
+.upbars.tall .upb { flex: 1; max-width: 8px; }
+
+/* Gunluk uptime cubuklari (MonitorPage). */
+.updays { display: flex; align-items: flex-end; gap: 1px; height: 40px; }
+.upd-bar { flex: 1; max-width: 16px; height: 50%; border-radius: 2px; background: var(--faint); }
+.upd-bar.on { height: 100%; background: var(--dim); }
+
+.upfail { display: flex; align-items: baseline; gap: var(--sp-2); font-size: var(--fs-2); padding: var(--sp-1) 0; }
+.upfail-t { flex: none; width: 76px; color: var(--dim); }
+.upfail-m { color: var(--text); min-width: 0; word-break: break-word; }
+
+/* ── Panel ölçeklemesi — PENCERE değil PANEL genişliği ────────────────────
+   Paneller dock içinde birbirinden bağımsız daralır: 1600px'lik bir pencerede
+   400px'e sıkışmış bir Home hâlâ altı sütun çiziyordu (sayılar üst üste
+   biniyordu). Ölçü artık kaydırma alanının kendi genişliği (container query).
+
+   Container YALNIZ kaydırma alanına verilir, `.panelbody`'ye DEĞİL: container
+   `contain: layout` getirir ve `position: fixed` çocukları kendine bağlar —
+   panel içinde render edilen host-key modalı ve sağ-tık menüsü panele
+   hapsolurdu. İkisi de kaydırma alanının DIŞINDA duruyor. */
+.home, .mon { container-type: inline-size; container-name: panel; }
+
+@container panel (max-width: 1000px) { .sysband { grid-template-columns: repeat(3, 1fr); } }
+@container panel (max-width: 620px) { .sysband { grid-template-columns: repeat(2, 1fr); } }
+@container panel (max-width: 380px) { .sysband { grid-template-columns: 1fr; } }
+@container panel (max-width: 760px) { .lower { grid-template-columns: 1fr; } }
+@container panel (max-width: 820px) { .cards, .mon-cards, .mon-strip { grid-template-columns: repeat(2, 1fr); } }
+@container panel (max-width: 480px) { .cards, .mon-cards, .mon-strip { grid-template-columns: 1fr; } }
+@container panel (max-width: 560px) { .disks { grid-template-columns: 1fr; } }
+/* Dar panelde hızlı bağlan alanı ve son-etkinlik satırı tek satıra sığmıyor. */
+@container panel (max-width: 480px) { .quickconnect .hintk { display: none; } }
+@container panel (max-width: 420px) { .upfail { flex-direction: column; gap: 0; } .upfail-t { width: auto; } }
+
+/* ══ 7. OVERLAY ═════════════════════════════════════════════════════════════
+   Mockup: 12d-overlays.html. Beş yüzey de aynı katman dilinden doğar:
+   scrim + yüzey + üst ışık kenarı + gölge. Farkları DAVRANIŞTA — palet
+   animasyonsuz, popover tetikleyicisinden büyür, modal ölçeklenir. */
+
+/* ── Komut paleti ────────────────────────────────────────────────────────
+   BİLE BİLE animasyonsuz (§11 ilke 2). ⇧⇧ ile günde yüzlerce kez açılır;
+   klavyeyle başlatılan bir aksiyonun animasyonu arayüzü yavaş hissettirir.
+   Yalnız scrim çok kısa bir fade alır. */
+.overlay.overlay-instant { animation-duration: var(--dur-press); }
+.palette {
+  position: relative;
+  width: min(560px, 92vw); max-height: 440px;
+  background: var(--surface); border-radius: var(--r-l);
+  display: flex; flex-direction: column; overflow: hidden; box-shadow: var(--shadow);
+}
+.pal-in { flex: none; display: flex; align-items: center; gap: var(--sp-2); padding: var(--sp-3); color: var(--dim); }
+.pal-in input { flex: 1; min-width: 0; background: none; border: none; outline: none; color: var(--text); font-size: var(--fs-4); }
+.pal-in input::placeholder { color: var(--faint); }
+.pal-list { flex: 1; min-height: 0; overflow: auto; padding: 0 var(--sp-2) var(--sp-2); }
+.pal-i {
+  position: relative; display: flex; align-items: center; gap: var(--sp-2);
+  padding: var(--sp-2); border-radius: var(--r-s); cursor: default; color: var(--text);
+}
+/* Seçili satır: --panel-2 + üst ışık. Beyaz dolgu YOK, kaydırma YOK. */
+/* Seçili satır --panel-2, gezinilen satır bir kademe altta (--panel). */
+.pal-i.sel { background: var(--panel-2); }
+.pal-i:hover:not(.sel) { background: var(--panel); }
+/* Mikro-inset istisnası (§5.3). */
+.pal-i .k {
+  font-family: var(--mono); font-size: var(--fs-1); color: var(--dim);
+  background: var(--panel); border-radius: var(--r-s); padding: 2px var(--sp-2);
+  flex: none; width: auto; text-transform: none; letter-spacing: 0;
+}
+.pal-i.sel .k { background: var(--panel); color: var(--dim); }
+.pal-i .nm { flex: 1; min-width: 0; font-size: var(--fs-3); color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pal-i .arg { flex: none; font-family: var(--mono); font-size: var(--fs-2); color: var(--dim); opacity: 1; }
+.pal-i.sel .nm { color: var(--text); }
+.pal-i.sel .arg { color: var(--dim); }
+.pal-empty { padding: var(--sp-3); font-size: var(--fs-2); color: var(--dim); }
+.pal-foot {
+  position: relative; flex: none; display: flex; gap: var(--sp-3);
+  padding: var(--sp-2) var(--sp-3); font-size: var(--fs-2); color: var(--dim);
+  border-top: none;
+}
+.pal-foot::before { content: ""; position: absolute; top: 0; left: var(--sp-3); right: var(--sp-3); height: 1px; background: var(--border-soft); }
+.pal-foot b {
+  font-family: var(--mono); font-weight: 400; color: var(--text);
+  background: var(--panel-2); border: none; border-radius: var(--r-s);
+  padding: 2px var(--sp-2); margin-right: var(--sp-1);
+}
+/* Tus kutusu bir GLIF degil SIMGE tasidiginda (yon oklari, enter): kutu simgeyi
+   ortalar, yoksa simge taban cizgisine oturup kutuyu asagi cekiyor. */
+.pal-k { display: inline-flex; align-items: center; gap: 2px; }
+
+/* ── Host-key kartı ──────────────────────────────────────────────────────
+   Üründeki en iyi yazılmış yüzey (redesign bunu devraldı). Parmak izi
+   KARŞILAŞTIRILIR → kırılmadan, tam görünür ve --text kontrastında. */
+.hk-card {
+  position: relative; margin: 0 var(--sp-3) var(--sp-3);
+  border-radius: var(--r-s); background: var(--panel); padding: var(--sp-2) var(--sp-3);
+}
+/* Tablo hattı — `border` yalnız veri tablosunda (§1). */
+.hk-row { display: flex; align-items: baseline; gap: var(--sp-3); padding: var(--sp-2) 0; border-bottom: 1px solid var(--border-soft); }
+.hk-row:last-child { border-bottom: 0; }
+.hk-k { width: 96px; flex: none; font-size: var(--fs-2); font-weight: 600; color: var(--dim); text-transform: none; letter-spacing: 0; }
+.hk-row .mono { flex: 1; min-width: 0; font-family: var(--mono); font-size: var(--fs-2); color: var(--text); }
+.hk-fp { word-break: break-all; line-height: 1.5; color: var(--text); }
+.hk-q { padding: 0 var(--sp-3); font-size: var(--fs-3); font-weight: 600; line-height: 1.3; color: var(--text); text-transform: none; letter-spacing: 0; margin: 0; }
+.hk-q.warn { display: flex; align-items: center; gap: var(--sp-2); }
+/* Değişmiş anahtar: renk değil, --red HALKALI nokta (§9). */
+.hk-q .mk { width: 8px; height: 8px; border-radius: 50%; background: var(--primary); flex: none; box-shadow: 0 0 0 1px var(--red); }
+.hk-p { padding: var(--sp-2) var(--sp-3) 0; font-size: var(--fs-2); color: var(--dim); line-height: 1.6; margin: 0; }
+.hk-p .mono { color: var(--text); font-family: var(--mono); }
+.hk-warn, .hk-warn-ic { color: var(--text); }
+
+/* ── About / Support ─────────────────────────────────────────────────────
+   İkisi de ortak modal gövdesinden doğar (§4); farkları yalnız içerikte.
+   Satırlar host-key kartıyla aynı dilde: etiket --dim, değer mono --text. */
+.about-lead { font-size: var(--fs-3); color: var(--dim); line-height: 1.6; margin: 0 0 var(--sp-3); }
+.about-rows {
+  position: relative; border-radius: var(--r-s); background: var(--panel);
+  padding: var(--sp-2) var(--sp-3);
+}
+/* Tablo hattı — `border` yalnız veri tablosunda yaşayabilir (§1). */
+.about-row { display: flex; align-items: baseline; gap: var(--sp-3); padding: var(--sp-2) 0; border-bottom: 1px solid var(--border-soft); }
+.about-row:last-child { border-bottom: 0; }
+.about-k { width: 96px; flex: none; font-size: var(--fs-2); font-weight: 600; color: var(--dim); }
+.about-v { flex: 1; min-width: 0; font-size: var(--fs-2); color: var(--text); word-break: break-all; }
+.about-note { font-size: var(--fs-2); color: var(--dim); line-height: 1.6; margin: var(--sp-3) 0 0; }
+.dialog .dlg-foot { justify-content: space-between; }
+
+/* ── Ayarlar modalı ──────────────────────────────────────────────────────
+   Mockup: 10-settings.html. Sekmeler alt çizgiyle değil, aktif sekmenin
+   --panel-2 yüzeyi + üst ışık kenarıyla ayrışır (§1.1 · §13 Crossfade). */
+.settings { width: min(620px, 94vw); max-height: 600px; display: flex; flex-direction: column; }
+.set-head { flex: none; display: flex; align-items: center; gap: var(--sp-2); padding: var(--sp-3) var(--sp-3) var(--sp-2); }
+.set-title { flex: 1; font-size: var(--fs-4); font-weight: 600; letter-spacing: -0.02em; }
+.set-tabs { flex: none; display: flex; gap: var(--sp-1); padding: 0 var(--sp-3) var(--sp-3); }
+.set-tab {
+  position: relative; height: 32px; padding: 0 var(--sp-3);
+  display: inline-flex; align-items: center; border-radius: var(--r-s);
+  font-size: var(--fs-2); font-weight: 600; color: var(--dim);
+  transition: transform var(--dur-press) var(--ease-out),
+    background-color var(--dur-hover) var(--ease-out),
+    color var(--dur-hover) var(--ease-out);
+}
+@media (hover: hover) and (pointer: fine) {
+  .set-tab:hover { color: var(--text); background: var(--panel); }
+}
+.set-tab:active { transform: scale(0.97); }
+.set-tab.on { color: var(--text); background: var(--panel-2); }
+
+.set-body { flex: 1; min-height: 0; overflow: auto; padding: 0 var(--sp-3) var(--sp-3); }
+/* Bölüm geçişi: Crossfade (§13) — slide yok, sekmeler yer değiştirmiyor. */
+.set-body > section { animation: p-rise var(--dur-panel) var(--ease-out) both; }
+.set-h { font-size: var(--fs-3); font-weight: 600; margin: 0 0 var(--sp-1); letter-spacing: 0; }
+.set-sub { font-size: var(--fs-2); color: var(--dim); line-height: 1.6; margin: 0 0 var(--sp-3); }
+.set-sub b { color: var(--text); }
+
+.set-themes, .ob-themes { display: grid; grid-template-columns: repeat(2, 1fr); gap: var(--sp-2); }
+
+.set-list { display: flex; flex-direction: column; gap: var(--sp-1); }
+.set-row {
+  position: relative; display: flex; align-items: center; gap: var(--sp-2);
+  padding: var(--sp-2); border-radius: var(--r-s); background: var(--panel);
+  transition: background-color var(--dur-hover) var(--ease-out);
+}
+.set-row.active { background: var(--panel-2); }
+.set-row-ic {
+  width: 32px; height: 32px; flex: none; border-radius: var(--r-s);
+  background: var(--panel-2); display: grid; place-items: center; color: var(--dim);
+}
+.set-row.active .set-row-ic { color: var(--text); }
+.set-row-main { flex: 1; min-width: 0; }
+.set-row-name { display: block; font-size: var(--fs-3); font-weight: 500; line-height: 1.3; }
+.set-row-meta {
+  display: flex; align-items: center; gap: var(--sp-1);
+  font-size: var(--fs-2); color: var(--dim); line-height: 1.3; font-family: var(--mono);
+}
+/* Mikro-inset istisnası (§5.3). */
+.set-badge {
+  font-family: var(--mono); font-size: var(--fs-1); color: var(--on-primary);
+  background: var(--primary); border-radius: var(--r-s);
+  padding: 2px var(--sp-2); flex: none; font-weight: 500;
+  text-transform: none; letter-spacing: 0;
+}
+.set-empty {
+  position: relative; padding: var(--sp-3); border-radius: var(--r-s); background: var(--panel);
+  font-size: var(--fs-2); color: var(--dim); line-height: 1.6; text-align: left;
+}
+
+.set-actions { display: flex; align-items: center; gap: var(--sp-2); margin-top: var(--sp-3); flex-wrap: wrap; }
+.set-hint { font-size: var(--fs-2); color: var(--dim); flex: 1; min-width: 180px; line-height: 1.6; }
+
+.set-sync-status {
+  position: relative; margin-top: var(--sp-3); border-radius: var(--r-s);
+  background: var(--panel); padding: var(--sp-2) var(--sp-3);
+}
+/* Tablo hattı — `border` yalnız veri tablosunda yaşayabilir (§1). */
+.set-sync-row { display: flex; align-items: baseline; gap: var(--sp-3); padding: var(--sp-2) 0; border-bottom: 1px solid var(--border-soft); }
+.set-sync-row:last-child { border-bottom: 0; }
+.set-sync-k { width: 110px; flex: none; font-size: var(--fs-2); font-weight: 600; color: var(--dim); text-transform: none; letter-spacing: 0; }
+.set-sync-v { flex: 1; min-width: 0; font-size: var(--fs-2); color: var(--text); }
+.set-note-muted {
+  position: relative; margin-top: var(--sp-3); padding: var(--sp-3);
+  border-radius: var(--r-s); background: var(--panel);
+  font-size: var(--fs-2); color: var(--dim); line-height: 1.6;
+}
+.set-note {
+  position: relative; margin-top: var(--sp-3);
+  display: flex; align-items: flex-start; gap: var(--sp-2);
+  padding: var(--sp-2) var(--sp-3); border-radius: var(--r-s); background: var(--panel-2);
+  font-size: var(--fs-2); color: var(--text); line-height: 1.5;
+  animation: p-rise var(--dur-panel) var(--ease-out) both;
+}
+.set-note .st { width: 8px; height: 8px; border-radius: 50%; background: var(--primary); flex: none; margin-top: 4px; }
+.set-note .st.err { box-shadow: 0 0 0 1px var(--red); }
+.set-note .st.run { background: var(--dim); animation: p-pulse var(--dur-pulse) ease-in-out infinite; }
+
+/* Tema seçici — Ayarlar ve Onboarding ortak gövde. */
+.ob-theme {
+  position: relative; display: flex; align-items: center; gap: var(--sp-2);
+  padding: var(--sp-2); border-radius: var(--r-s); background: var(--panel);
+  text-align: left; border: none;
+  transition: transform var(--dur-press) var(--ease-out),
+    background-color var(--dur-hover) var(--ease-out);
+}
+@media (hover: hover) and (pointer: fine) {
+  .ob-theme:hover { background: var(--panel-2); }
+}
+.ob-theme:active { transform: scale(0.98); }
+.ob-theme.on { background: var(--panel-2); }
+/* Swatch: temanın GERÇEK zemin+metin rengi — bir tema önizlemesi. §2.2'nin
+   bilinçli istisnası: renk burada dekorasyon değil, içeriğin kendisi. */
+.ob-swatch {
+  width: 36px; height: 36px; flex: none; border-radius: var(--r-s); overflow: hidden;
+  display: flex; box-shadow: inset 0 0 0 1px var(--edge); margin: 0;
+}
+.ob-swatch span { flex: 1; width: auto; height: auto; border: none; border-radius: 0; }
+.ob-theme-main { flex: 1; min-width: 0; }
+.ob-theme-name { display: block; font-size: var(--fs-3); font-weight: 500; line-height: 1.3; color: var(--text); }
+.ob-theme-sub { display: block; font-size: var(--fs-2); color: var(--dim); line-height: 1.3; margin-top: 0; }
+.ob-theme-check {
+  position: static; flex: none; color: var(--text);
+  opacity: 0; translate: 0 2px;
+  transition: opacity var(--dur-press) var(--ease-out), translate var(--dur-press) var(--ease-out);
+}
+.ob-theme.on .ob-theme-check { opacity: 1; translate: 0 0; }
+
+/* ── Saved commands (Snippets) ───────────────────────────────────────────
+   Mockup: 11-snippets.html. Yıkıcı komut renkle değil IŞIKLA işaretlenir:
+   satırın ışık kenarı --lit-2'ye çıkar, rozet --red HALKALI (§9 / GK2b). */
+.snm { width: min(660px, 94vw); max-height: 620px; }
+.snm-toolbar { flex: none; padding: 0 var(--sp-3) var(--sp-3); }
+.snm-search {
+  position: relative; height: 36px; border-radius: var(--r-s); background: var(--panel);
+  display: flex; align-items: center; gap: var(--sp-2); padding: 0 var(--sp-2); color: var(--dim);
+}
+.snm-search:focus-within { background: var(--panel-2); }
+.snm-search input {
+  flex: 1; min-width: 0; background: none; border: none;
+  color: var(--text); font-size: var(--fs-2);
+}
+.snm-search input::placeholder { color: var(--faint); }
+.snm-new { height: 32px; }
+
+.snm-group { margin-bottom: var(--sp-3); }
+/* §7.3 — cümle düzeni grup başlığı. */
+.snm-group-h {
+  display: flex; align-items: baseline; gap: var(--sp-2);
+  padding: var(--sp-2) var(--sp-1);
+  font-size: var(--fs-2); font-weight: 600; color: var(--dim);
+  text-transform: none; letter-spacing: 0;
+}
+.snm-count { font-family: var(--mono); font-weight: 400; font-variant-numeric: tabular-nums; }
+
+.snm-row {
+  position: relative; display: flex; align-items: center; gap: var(--sp-2);
+  padding: var(--sp-2); border-radius: var(--r-s);
+  transition: background-color var(--dur-hover) var(--ease-out);
+}
+@media (hover: hover) and (pointer: fine) {
+  .snm-row:hover { background: var(--panel); }
+}
+.snm-main { flex: 1; min-width: 0; }
+.snm-label { display: flex; align-items: center; gap: var(--sp-2); font-size: var(--fs-3); font-weight: 500; line-height: 1.3; }
+/* Mikro-inset istisnası (§5.3); renk yalnız 1px halkada (§9). */
+.snm-danger {
+  display: inline-flex; align-items: center; gap: var(--sp-1); flex: none;
+  font-family: var(--mono); font-size: var(--fs-1); color: var(--text);
+  background: var(--panel-2); border-radius: var(--r-s);
+  padding: 2px var(--sp-2); box-shadow: inset 0 0 0 1px var(--red);
+  text-transform: none; letter-spacing: 0;
+}
+/* Komut yüzeyi — terminalin dili (§7.5): mono, tek satır, ilk sözcük komuttur. */
+.snm-cmd {
+  margin-top: var(--sp-1); font-family: var(--mono); font-size: var(--fs-2);
+  line-height: 1.5; color: var(--dim);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.snm-cmd .c { color: var(--text); }
+
+.snm-actions {
+  display: flex; gap: var(--sp-1); flex: none; opacity: 0;
+  transition: opacity var(--dur-hover) var(--ease-out);
+}
+.snm-row:hover .snm-actions, .snm-row:focus-within .snm-actions { opacity: 1; }
+.snm-ic { position: relative; width: 32px; height: 32px; }
+/* Kopyalandı geri bildirimi: ikon değişmez, ÜSTÜNE tik biner. */
+.snm-ic .tick {
+  position: absolute; inset: 0; display: grid; place-items: center;
+  background: var(--panel-2); border-radius: inherit;
+  opacity: 0; translate: 0 3px; pointer-events: none;
+  transition: opacity var(--dur-press) var(--ease-out), translate var(--dur-press) var(--ease-out);
+}
+.snm-ic.copied { color: var(--text); }
+.snm-ic.copied .tick { opacity: 1; translate: 0 0; }
+
+/* Satır içi silme onayı */
+.snm-confirm {
+  display: flex; align-items: center; gap: var(--sp-2); flex: none;
+  font-size: var(--fs-2); color: var(--text);
+  animation: p-pop-in var(--dur-pop) var(--ease-pop) both;
+}
+.snm-confirm button {
+  height: 28px; padding: 0 var(--sp-2); border-radius: var(--r-s);
+  background: var(--panel-2); font-size: var(--fs-2); font-weight: 600; color: var(--dim);
+  display: inline-flex; align-items: center; gap: var(--sp-1);
+  transition: color var(--dur-hover) var(--ease-out), background-color var(--dur-hover) var(--ease-out);
+}
+.snm-confirm button:hover { color: var(--text); background: var(--panel); }
+.snm-confirm button.danger { background: var(--primary); color: var(--on-primary); }
+.snm-confirm button.danger:hover { background: var(--text); }
+.snm-confirm button.danger .mk {
+  width: 8px; height: 8px; border-radius: 50%; flex: none;
+  background: var(--on-primary); box-shadow: 0 0 0 1px var(--red);
+}
+
+/* Yıkıcı komut uyarısı — form içinde, canlı. */
+.snm-danger-note {
+  position: relative; display: flex; align-items: flex-start; gap: var(--sp-2);
+  padding: var(--sp-2) var(--sp-3); border-radius: var(--r-s); background: var(--panel-2);
+  font-size: var(--fs-2); color: var(--text); line-height: 1.5; margin-bottom: var(--sp-3);
+  animation: p-rise var(--dur-panel) var(--ease-out) both;
+}
+.snm-danger-note svg { flex: none; margin-top: 1px; }
+.snm .dlg-foot { justify-content: flex-end; margin-top: var(--sp-4); padding: 0; }
+/* Metin alanı ve seçici, mockup'ın .fwrap gövdesini kullanır. */
+.snm .fwrap { min-height: 36px; height: auto; }
+.snm .fwrap textarea {
+  flex: 1; min-width: 0; background: none; border: none; outline: none; color: var(--text);
+  font-family: var(--mono); font-size: var(--fs-2); line-height: 1.5;
+  padding: var(--sp-2) 0; resize: vertical; min-height: 66px;
+}
+.snm .fwrap select {
+  flex: 1; min-width: 0; background: none; border: none; outline: none; color: var(--text);
+  font-size: var(--fs-2); cursor: pointer; appearance: none; padding-right: var(--sp-3);
+}
+.snm .fwrap select option { background: var(--panel); color: var(--text); }
+.snm .fwrap .chev { position: absolute; right: var(--sp-2); color: var(--dim); pointer-events: none; }
+
+/* ── Yükleme ekranı ──────────────────────────────────────────────────────
+   Mockup: 03-loading.html. Mevcut mekanizma KORUNDU (redesign onu devraldı):
+   mark iki dilimli bir GEÇİT, aralarındaki negatif alan kapının kendisi;
+   gösterge ayrı bir çubuk/spinner DEĞİL — markın kendisi maske olur ve
+   içinden yavaş bir ışık bandı geçer. Portal'ın yaptığı iş budur.
+
+   · İlk 280ms hiçbir gösterge yok → hızlı açılışta "yükleniyor" hiç görünmez.
+   · Determinate bar YOK: bootstrap'ta ölçülebilir yüzde yok, çizersen yalan.
+   · Teşhis (metin + log) yalnız 4sn sabır eşiğinden sonra (LoadingScreen.tsx).
+   · Mark METİN DEĞİL GÖRSEL, CSS mask olarak basılır (DESIGN §24.2). Maske
+     yalnız alpha kullanır → renk --text'ten gelir; filter/invert hilesi yok.
+   · Işık bandı yataydır — 30° yasasının TEK istisnası (§4.1): plakalar dikey
+     kaydırılmış olduğu için yatay band önce sağ, sonra sol plakayı yakar;
+     geçidin geometrisi hareketin İÇİNDE okunur. */
+
+/* Markın dinlenme opaklığı + ışık bandının tepe gücü temaya göre ayarlanır:
+   aynı sayılar açık zeminde çok sert, Contrast'ta çok sönük kalıyor. */
+.loading { --mark-rest: 0.34; --beam-peak: 86%; }
+:root[data-theme="paper"] .loading { --mark-rest: 0.26; --beam-peak: 92%; }
+:root[data-theme="contrast"] .loading { --mark-rest: 0.5; --beam-peak: 100%; }
+
+.loading {
+  position: fixed; inset: 0; z-index: 100; background: var(--bg-deep);
+  display: grid; place-items: center;
+  /* Marka kilidi. Oranlar UYDURULMAZ: resmi logodan ölçüldü (§24.2). */
+  --mark-h: 76px;
+  --gap-clear: 0.4;    /* kilit → sonraki öğe (§24.2 clear-space) */
+  /* Çıkış girişten hızlı (--dur-exit): sistem hazırsa kullanıcı beklemez.
+     blur iki katmanın çakışmasını maskeler → tek nesne gibi okunur. */
+  transition: opacity var(--dur-exit) var(--ease-out),
+    transform var(--dur-exit) var(--ease-out),
+    filter var(--dur-exit) var(--ease-out);
+}
+.loading-out { opacity: 0; transform: scale(1.015); filter: blur(3px); pointer-events: none; }
+
+.loading-center {
+  display: flex; flex-direction: column; align-items: center;
+  width: min(300px, 80vw);
+  /* scale(0) değil: marka yoktan belirmez, netleşir. */
+  animation: p-card-in var(--dur-card) var(--ease-out) both;
+}
+
+/* PNG'nin şeffaf payı çok geniş. Aşağıdaki mask-size/position, varlığın
+   GERÇEK alpha bbox'ından ölçüldü; varlık değişirse yeniden ölçülür. */
+.loading-mark {
+  position: relative; overflow: hidden;
+  height: var(--mark-h);
+  width: calc(var(--mark-h) * 0.5314);   /* ölçülen en÷boy */
+  -webkit-mask-image: var(--mark-src); mask-image: var(--mark-src);
+  -webkit-mask-repeat: no-repeat; mask-repeat: no-repeat;
+  -webkit-mask-size: 403.15% 214.23%; mask-size: 403.15% 214.23%;
+  -webkit-mask-position: 49.87% 50.18%; mask-position: 49.87% 50.18%;
+}
+.loading-mark .rest { position: absolute; inset: 0; background: var(--text); opacity: var(--mark-rest); }
+/* 2400ms KASITLI yavaş: hızlı dönen gösterge "acele" der, biz "sakin" deriz. */
+.loading-mark .beam {
+  position: absolute; left: 0; right: 0; top: 0; height: 64%;
+  background: linear-gradient(180deg,
+    transparent 0%,
+    color-mix(in srgb, var(--text) 38%, transparent) 34%,
+    color-mix(in srgb, var(--text) var(--beam-peak), transparent) 50%,
+    color-mix(in srgb, var(--text) 38%, transparent) 66%,
+    transparent 100%);
+  transform: translateY(-100%);
+  animation: p-beam var(--dur-band) linear var(--dur-enter) infinite,
+    p-fade var(--dur-panel) var(--ease-out) var(--dur-enter) both;
+  will-change: transform;
+}
+
+/* Sabit yükseklik → durum metni gelince düzen kaymaz. */
+.loading-statusrow {
+  height: 18px; display: grid; place-items: center;
+  margin-top: calc(var(--mark-h) * var(--gap-clear));
+}
+/* §7.3 — UPPERCASE tracked etiket KALDIRILDI: cümle düzeni + 600.
+   Renk: boot sırasındaki TEK metin → --dim (--faint 2.9:1 kalırdı). */
+.loading-status {
+  font-size: var(--fs-2); font-weight: 600; color: var(--dim);
+  opacity: 0; transform: translateY(2px);
+  transition: opacity var(--dur-panel) var(--ease-out),
+    transform var(--dur-panel) var(--ease-out);
+}
+.loading-status[data-show="1"] { opacity: 1; transform: none; }
+
+/* Sabır eşiği: teşhis ancak 4sn sonra. Erken gösterilen teşhis boşuna
+   endişelendirir — hiçbir şey bozulmadan hata arayüzü gösterme. */
+.loading-patience {
+  margin-top: var(--sp-5); width: 100%;
+  display: flex; flex-direction: column; align-items: center; gap: var(--sp-3);
+  opacity: 0; transform: translateY(4px); pointer-events: none;
+  transition: opacity var(--dur-panel) var(--ease-out),
+    transform var(--dur-panel) var(--ease-out);
+}
+.loading-patience[data-show="1"] { opacity: 1; transform: none; pointer-events: auto; }
+.loading-patience p {
+  margin: 0; font-size: var(--fs-3); color: var(--dim); text-align: center;
+  max-width: 270px; line-height: 1.6;
+}
+.loading-term-toggle {
+  display: inline-flex; align-items: center; gap: var(--sp-1);
+  font-family: var(--mono); font-size: var(--fs-2); color: var(--dim);
+  background: var(--panel); border-radius: var(--r-s); padding: var(--sp-1) var(--sp-2);
+  transition: transform var(--dur-press) var(--ease-out),
+    color var(--dur-hover) var(--ease-out);
+}
+.loading-term-toggle:hover { color: var(--text); }
+.loading-term-toggle:active { transform: scale(0.97); }
+/* §1 — kenarlık YOK, yüzey + üst ışık kenarı. */
+.loading-term {
+  position: relative;
+  width: 100%; max-height: 112px; overflow: auto; background: var(--surface);
+  border-radius: var(--r-m); padding: var(--sp-2) var(--sp-3);
+  font-family: var(--mono); font-size: var(--fs-2); line-height: 1.8; color: var(--dim);
+  font-variant-numeric: tabular-nums; text-align: left;
+  animation: p-rise var(--dur-panel) var(--ease-out) both;
+}
+.loading-term .lt { white-space: pre-wrap; }
+.loading-term .ok { color: var(--green); vertical-align: -3px; }
+.loading-term .pr { color: var(--faint); }
+/* Sürüm damgası destek konuşmalarında okunur olmalı → --dim. */
+.loading-version {
+  position: absolute; bottom: var(--sp-5); left: 50%; translate: -50% 0;
+  font-size: var(--fs-2); color: var(--dim);
+}
+
+/* Yükleme → uygulama çapraz geçişi. Çıkış (140ms) girişten (280ms) hızlı;
+   giriş çıkışın üstüne biner → boş kare yok. */
+.app-hidden { opacity: 0; }
+.app-enter { animation: p-app-in var(--dur-enter) var(--ease-out) both; }
+
+/* ── Onboarding ──────────────────────────────────────────────────────────
+   Mockup: 12b-onboarding.html. Akış DALLANIR: parola girilirse 5 adım
+   (recovery dahil), girilmezse 4 — nokta göstergesi buna göre değişir.
+   Tam-ekran kapı olduğu için ortalanmış kart serbesttir (§5.1 istisnası). */
+/* Tam-ekran kapı gövdesi — Onboarding ve Unlock ORTAK (aynı kabuk, farklı içerik). */
+.ob, .unlock {
+  position: fixed; inset: 0; z-index: 95; background: var(--bg);
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  animation: p-fade var(--dur-modal) var(--ease-out) both;
+}
+/* §4.1 — dekoratif gradyan yasağının TEK istisnası: markın arkasındaki ambient
+   ışık havuzu. Elips (açıklık dikeydir), tavan %5, animasyonsuz. */
+.ob::before, .unlock::before {
+  content: ""; position: absolute; inset: 0; pointer-events: none;
+  background: radial-gradient(ellipse 60% 40% at 50% 38%, rgba(250, 250, 250, 0.045), transparent 70%);
+}
+.ob-card, .unlock-card {
+  position: relative; z-index: 2;
+  background: var(--surface); border-radius: var(--r-l);
+  box-shadow: var(--shadow);
+  animation: p-modal-in var(--dur-modal) var(--ease-out) both;
+}
+.ob-foot, .unlock-foot {
+  position: absolute; bottom: var(--sp-4); left: 0; right: 0; text-align: center;
+  font-size: var(--fs-2); color: var(--dim); z-index: 2;
+}
+
+.ob-card { width: min(480px, 92vw); max-height: 600px; padding: var(--sp-4); display: flex; flex-direction: column; }
+
+/* Nokta göstergesi — aktif nokta GENİŞLER: konum bilgisi biçimle, renkle değil.
+   6px yükseklikte --r-s (8px) kırpılır → hap; yeni yarıçap değeri gerekmez. */
+.ob-dots { display: flex; justify-content: center; gap: var(--sp-1); margin-bottom: var(--sp-4); }
+.ob-dot {
+  width: 6px; height: 6px; border-radius: 50%; background: var(--faint); opacity: 0.5;
+  transition: opacity var(--dur-panel) var(--ease-out),
+    width var(--dur-panel) var(--ease-out),
+    background-color var(--dur-panel) var(--ease-out);
+}
+.ob-dot::after { content: none; }
+.ob-dot.done { background: var(--dim); opacity: 1; }
+.ob-dot.on { background: var(--primary); opacity: 1; width: 20px; border-radius: var(--r-s); }
+
+/* Adım gövdesi — Crossfade (§13), slide YOK. */
+.ob-step { display: flex; flex-direction: column; animation: p-rise var(--dur-panel) var(--ease-out) both; }
+.ob-center { text-align: center; align-items: center; }
+
+.ob-hero { --mark-h: 83px; }
+.ob-word {
+  font-size: var(--fs-5); font-weight: 600; letter-spacing: -0.02em;
+  margin: var(--sp-3) 0 var(--sp-2); padding-left: 0; color: var(--text);
+}
+.ob-lead { font-size: var(--fs-3); color: var(--dim); line-height: 1.6; max-width: 38ch; margin: 0; }
+.ob-h { font-size: var(--fs-5); font-weight: 600; letter-spacing: -0.02em; line-height: 1.2; margin: 0; }
+.ob-sub { font-size: var(--fs-2); color: var(--dim); line-height: 1.6; margin: var(--sp-2) 0 0; }
+.ob-note { font-size: var(--fs-2); color: var(--dim); line-height: 1.6; margin: var(--sp-2) 0 0; }
+.ob-body { flex: 1; min-height: 0; overflow: auto; margin-top: var(--sp-3); }
+.ob-themes { margin-top: var(--sp-3); }
+.ob-card .fld { margin: var(--sp-3) 0 0; text-align: left; }
+.ob-card .fwrap { height: 36px; }
+/* Uyarı: renk tek taşıyıcı değil — nokta + --red halka (§9). */
+.ob-warn {
+  display: flex; align-items: flex-start; gap: var(--sp-2); margin-top: var(--sp-2);
+  font-size: var(--fs-2); color: var(--text);
+  animation: p-rise var(--dur-panel) var(--ease-out) both;
+}
+.ob-warn .mk { width: 8px; height: 8px; border-radius: 50%; background: var(--primary); flex: none; margin-top: 4px; box-shadow: 0 0 0 1px var(--red); }
+.ob-err { margin-top: var(--sp-2); }
+
+/* Kurtarma cümlesi */
+.ob-reco-badge {
+  width: 36px; height: 36px; border-radius: var(--r-s); background: var(--panel-2);
+  display: grid; place-items: center; color: var(--text); margin-bottom: var(--sp-3); border: none;
+}
+.ob-phrase {
+  position: relative; list-style: none;
+  display: grid; grid-template-columns: repeat(3, 1fr); gap: var(--sp-1);
+  margin: var(--sp-3) 0 0; padding: var(--sp-2); border-radius: var(--r-s); background: var(--panel);
+}
+.ob-phrase li {
+  display: flex; align-items: baseline; gap: var(--sp-2); padding: var(--sp-1);
+  background: none; border: none; border-radius: 0;
+  animation: p-rise var(--dur-panel) var(--ease-out) both;
+}
+/* Kurtarma kelimelerinin numaraları OKUNMASI GEREKEN içerik (kullanıcı geri
+   yazarken sırayı takip eder) → --faint değil --dim (§2.1). */
+.ob-phrase-n { font-family: var(--mono); font-size: var(--fs-1); color: var(--dim); width: 14px; flex: none; text-align: right; }
+.ob-phrase-w { font-family: var(--mono); font-size: var(--fs-3); color: var(--text); }
+.ob-phrase-loading {
+  position: relative; margin-top: var(--sp-3); padding: var(--sp-3); border-radius: var(--r-s);
+  background: var(--panel); font-size: var(--fs-2); color: var(--dim);
+  display: flex; align-items: center; gap: var(--sp-2);
+}
+.ob-phrase-loading .st { width: 8px; height: 8px; border-radius: 50%; background: var(--dim); flex: none; animation: p-pulse var(--dur-pulse) ease-in-out infinite; }
+.ob-reco-tools { margin-top: var(--sp-2); display: flex; justify-content: flex-start; }
+
+.ob-check {
+  position: relative; display: flex; align-items: center; gap: var(--sp-2);
+  margin-top: var(--sp-3); padding: var(--sp-2); border-radius: var(--r-s);
+  background: var(--panel); cursor: pointer; text-align: left;
+  font-size: var(--fs-2); color: var(--dim); line-height: 1.5;
+  transition: color var(--dur-hover) var(--ease-out);
+}
+@media (hover: hover) and (pointer: fine) {
+  .ob-check:hover { color: var(--text); }
+}
+.ob-check.on { color: var(--text); }
+.ob-check input { position: absolute; opacity: 0; width: 0; height: 0; margin: 0; }
+.ob-box {
+  width: 20px; height: 20px; flex: none; border-radius: var(--r-s); background: var(--panel-2);
+  box-shadow: inset 0 0 0 1px var(--edge); display: grid; place-items: center;
+  color: var(--on-primary); overflow: hidden;
+  transition: background-color var(--dur-press) var(--ease-out);
+}
+.ob-check.on .ob-box { background: var(--primary); box-shadow: inset 0 0 0 1px var(--primary); }
+.ob-box svg {
+  opacity: 0; translate: 0 2px;
+  transition: opacity var(--dur-press) var(--ease-out), translate var(--dur-press) var(--ease-out);
+}
+.ob-check.on .ob-box svg { opacity: 1; translate: 0 0; }
+
+/* Hazır — tamamlanma işareti dolu daire (renk değil, dolgu). */
+.ob-ready-mark {
+  width: 56px; height: 56px; border-radius: 50%; background: var(--primary);
+  color: var(--on-primary); display: grid; place-items: center;
+  margin-bottom: var(--sp-3); border: none;
+  animation: p-modal-in var(--dur-modal) var(--ease-out) both;
+}
+
+.ob-actions { display: flex; gap: var(--sp-2); margin-top: var(--sp-4); align-items: center; }
+.ob-actions-center { justify-content: center; }
+.ob-actions-split { justify-content: space-between; }
+.ob-actions-right { display: flex; gap: var(--sp-2); }
+.ob-skip {
+  font-size: var(--fs-2); color: var(--dim); text-decoration: none;
+  transition: color var(--dur-hover) var(--ease-out);
+}
+.ob-skip:hover { color: var(--text); }
+
+/* ── Kilit-açma ekranı ───────────────────────────────────────────────────
+   Mockup: 02-unlock.html. MARK KİLİDİN KENDİSİDİR — ayrı bir kilit ikonu
+   durumu taşımaz; durumu iki plaka arasındaki açıklık taşır. */
+.unlock-card {
+  width: min(380px, 92vw);
+  padding: var(--sp-5) var(--sp-4) var(--sp-4);
+  display: flex; flex-direction: column; align-items: center; text-align: center;
+}
+.unlock-card.shake { animation: p-shake var(--dur-shake) var(--ease-in-out) 3; }
+
+/* Mark = markanın kendisi; kilit durumu ONUN üzerinde okunmaz, altındaki
+   satırda okunur ("Profile locked"). Tek efekt glow. */
+.unlock-mark { --mark-h: 73px; margin: 0 auto var(--sp-3); }
+/* Vault açılırken glow nefes alır; açılınca bir kez parlar. */
+.unlock-card.busy .unlock-mark { animation: p-mark-glow var(--dur-pulse) ease-in-out infinite; }
+.unlock-card.opened .unlock-mark { --mark-glow: 0.85; }
+
+.unlock-lockrow {
+  display: inline-flex; align-items: center; gap: var(--sp-1);
+  font-size: var(--fs-2); color: var(--dim);
+}
+.unlock-name {
+  font-size: var(--fs-5); font-weight: 600; letter-spacing: -0.02em; line-height: 1.15;
+  margin: var(--sp-2) 0 var(--sp-1);
+}
+.unlock-sub { font-size: var(--fs-2); color: var(--dim); line-height: 1.6; margin: 0 0 var(--sp-4); }
+
+/* Mod değişimi — Crossfade (§13), slide YOK. */
+.unlock-pane { width: 100%; animation: p-fade var(--dur-panel) var(--ease-out) both; }
+.unlock-card .fld { width: 100%; text-align: left; margin-bottom: var(--sp-2); }
+.unlock-card .fwrap { height: 40px; padding: 0 var(--sp-2); }
+.unlock-card .fwrap.tall { height: auto; min-height: 76px; }
+/* Hata alana İNLINE bağlıdır: ışık kenarı --lit-3'e çıkar (yüzen satır değil). */
+.unlock-card .err { margin: var(--sp-2) 0 0; text-align: left; animation: p-fade var(--dur-panel) var(--ease-out) both; }
+.unlock-card .err .raw { font-size: var(--fs-1); }
+
+.unlock-go { width: 100%; height: 40px; margin-top: var(--sp-3); font-size: var(--fs-3); }
+
+.unlock-forgot {
+  display: block; width: 100%; margin-top: var(--sp-3);
+  font-size: var(--fs-2); color: var(--dim);
+  transition: color var(--dur-hover) var(--ease-out);
+}
+.unlock-forgot:hover { color: var(--text); }
+.unlock-forgot:disabled { opacity: 0.5; cursor: not-allowed; }
+
+.unlock-others { width: 100%; margin-top: var(--sp-4); padding-top: var(--sp-3); text-align: left; position: relative; }
+.unlock-others::before { content: ""; position: absolute; top: 0; left: 0; right: 0; height: 1px; background: var(--border-soft); }
+.unlock-others-k { display: block; font-size: var(--fs-2); font-weight: 600; color: var(--dim); margin-bottom: var(--sp-2); }
+.unlock-chips { display: flex; flex-wrap: wrap; gap: var(--sp-1); }
+.unlock-chip {
+  height: 30px; padding: 0 var(--sp-2); border-radius: var(--r-s); background: var(--panel);
+  display: inline-flex; align-items: center; gap: var(--sp-1);
+  font-size: var(--fs-2); color: var(--dim);
+  transition: transform var(--dur-press) var(--ease-out),
+    color var(--dur-hover) var(--ease-out), background-color var(--dur-hover) var(--ease-out);
+  animation: p-rise var(--dur-panel) var(--ease-out) both;
+}
+.unlock-chip:nth-child(2) { animation-delay: calc(var(--dur-reveal) * 1); }
+.unlock-chip:nth-child(3) { animation-delay: calc(var(--dur-reveal) * 2); }
+@media (hover: hover) and (pointer: fine) { .unlock-chip:hover { color: var(--text); background: var(--panel-2); } }
+.unlock-chip:active { transform: scale(0.97); }
+.unlock-chip:disabled { opacity: 0.5; cursor: not-allowed; }
+.unlock-chip svg { opacity: 0.75; }

@@ -1,0 +1,20 @@
+/target
+**/*.rs.bk
+*.tmp
+
+# OS / editör
+.DS_Store
+Thumbs.db
+/.idea
+/.vscode
+
+# iç dokümanlar ve araç artıkları — GitHub'a gitmez (bkz. docs/PUBLISHING.md)
+/docs
+/CLAUDE.md
+/.claude
+/.impeccable
+
+# çevre
+.env
+.env.*
+*.log

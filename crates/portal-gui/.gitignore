@@ -1,0 +1,13 @@
+# frontend
+node_modules
+dist
+dist-ssr
+*.local
+
+# tauri
+src-tauri/target
+src-tauri/gen
+
+# Switzer: ITF Free Font License font DOSYASININ repo ile dağıtılmasını yasaklıyor
+# (kullanmak ve .msi içinde göndermek serbest). postinstall Fontshare'den indirir.
+src/assets/fonts/Switzer-*.woff2

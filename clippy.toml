@@ -1,0 +1,4 @@
+# Kütüphane kodunda unwrap/expect yasak (lib.rs'te warn + CI'da -D warnings).
+# Testlerde idiomatik olduğu için muaf.
+allow-unwrap-in-tests = true
+allow-expect-in-tests = true

@@ -1,0 +1,14 @@
+{
+  "detector": {
+    "ignoreRules": [],
+    "ignoreFiles": [],
+    "ignoreValues": [
+      {
+        "rule": "overused-font",
+        "value": "geist",
+        "createdAt": "2026-08-19T11:46:47.102Z",
+        "reason": "Project-mandated typeface: docs/DESIGN.md 2 tokens + docs/mockups/portal-windows-gui-main.html; Geist.woff2 embedded at src/assets/fonts since before this session. Duplicate of root .impeccable entry because the ignore store resolves per working directory."
+      }
+    ]
+  }
+}

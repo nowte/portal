@@ -1,0 +1,257 @@
+<!doctype html>
+<html lang="en" data-theme="black">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Portal — font kontrolü (gerçek styles.css)</title>
+
+<!-- GERÇEK stylesheet. Font url()'leri CSS dosyasına göreli olduğu için
+     crates/portal-gui/src/assets/fonts/*.woff2 doğrudan yüklenir. -->
+<link rel="stylesheet" href="/src/styles.css" />
+
+<style>
+  /* Yalnız bu kontrol sayfasının iskeleti — üründe yok, styles.css'e dokunmaz. */
+  /* styles.css uygulama kabuğu için html/body'yi 100%+hidden yapıyor;
+     bu kontrol sayfası uzun ve akmalı. */
+  html, body, #root { height: auto; overflow: visible; }
+  .checkbar {
+    position: sticky; top: 0; z-index: 10; display: flex; align-items: center; gap: 12px;
+    padding: 10px 16px; background: var(--surface); border-bottom: 1px solid var(--border);
+    font-size: var(--fs-2); color: var(--dim);
+  }
+  .checkbar b { color: var(--text); font-weight: 600; }
+  .checkbar .sp { flex: 1; }
+  .checkbar code { font-family: var(--mono); color: var(--text); }
+  .fail { color: var(--red); font-weight: 600; }
+  .pass { color: var(--green); font-weight: 600; }
+  .wrap { max-width: 1180px; margin: 0 auto; padding: 24px 20px 80px; }
+  .twocol { display: grid; grid-template-columns: 300px 1fr; gap: 24px; align-items: start; }
+  .frame { border: 1px solid var(--border); border-radius: var(--r-6); overflow: hidden; background: var(--bg); }
+  .frame > h3 {
+    margin: 0; padding: 10px 14px; border-bottom: 1px solid var(--border); background: var(--surface);
+    font-size: var(--fs-1); font-weight: 600; letter-spacing: 0.13em; text-transform: uppercase; color: var(--dim);
+  }
+  .frame .in { padding: 16px; }
+  .micro-tbl { width: 100%; border-collapse: collapse; margin-top: 4px; }
+  .micro-tbl td { padding: 6px 10px; border-bottom: 1px solid var(--border-soft); vertical-align: baseline; }
+  .micro-tbl td:first-child { color: var(--faint); font-size: var(--fs-1); white-space: nowrap; width: 1%; }
+  .micro-tbl tr:last-child td { border-bottom: none; }
+</style>
+</head>
+<body>
+
+<div class="checkbar">
+  <b>Font kontrolü</b> — gerçek <code>styles.css</code> · Switzer + Commit Mono
+  <span class="sp"></span>
+  <span id="verdict">ölçülüyor…</span>
+</div>
+
+<div class="wrap">
+
+  <div class="twocol">
+
+    <!-- ── Sol: dar sütun, en sıkışık tipografi ─────────────────────────── -->
+    <div class="frame">
+      <h3>Hosts paneli — 10.5px mono adres</h3>
+      <div class="in" style="padding:8px 0 12px">
+        <label class="search" style="margin:0 10px 8px">
+          <input placeholder="Find a server…" />
+        </label>
+        <div class="grouphdr"><span class="gname">Homelab</span><span class="cnt">3/5</span></div>
+        <div class="hostrow sel">
+          <div>
+            <div class="h-name">Zeus</div>
+            <div class="h-sub">root@10.0.0.12:22</div>
+          </div>
+        </div>
+        <div class="hostrow">
+          <div>
+            <div class="h-name">Atlas</div>
+            <div class="h-sub">deploy@192.168.1.41</div>
+          </div>
+        </div>
+        <div class="hostrow">
+          <div>
+            <div class="h-name">Helios</div>
+            <div class="h-sub">ubuntu@10.0.0.24</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── Sağ: Home içeriği, gerçek sınıflar ───────────────────────────── -->
+    <div class="frame">
+      <h3>Home — 30px başlıktan 9.5px statusbar'a</h3>
+      <div class="in">
+
+        <div class="greet">
+          <h1>Good evening.</h1>
+          <div class="subgreet">
+            <span class="mono">Thursday, 20 August 2026</span>
+            <span class="sb-div">·</span>
+            <span class="live"><span class="dot on"></span>3 of 5 hosts connected</span>
+          </div>
+        </div>
+
+        <div class="qc">
+          <label class="quickconnect">
+            <input value="root@10.0.0.12" />
+            <span class="hintk">↵</span>
+          </label>
+          <button class="btn-hero">Connect</button>
+        </div>
+
+        <div class="sysband">
+          <div class="sysseg">
+            <span class="u">Uptime</span>
+            <span class="val num">2<small>d</small> 06<small>h</small> 41<small>m</small></span>
+            <span class="sub">since last launch</span>
+          </div>
+          <div class="sysseg">
+            <span class="u">Database</span>
+            <span class="val ok"><span class="dot on"></span>Healthy</span>
+            <span class="sub">encrypted vault</span>
+          </div>
+          <div class="sysseg">
+            <span class="u">Hosts online</span>
+            <span class="val num">3 <small>/ 5</small></span>
+            <span class="sub">saved servers</span>
+          </div>
+          <div class="sysseg">
+            <span class="u">Sessions</span>
+            <span class="val num">2</span>
+            <span class="sub">open now</span>
+          </div>
+          <div class="sysseg">
+            <span class="u">Profile</span>
+            <span class="val sm">homelab</span>
+            <span class="sub">no account</span>
+          </div>
+          <div class="sysseg">
+            <span class="u">Device</span>
+            <span class="val sm">workstation</span>
+            <span class="sub">this machine</span>
+          </div>
+        </div>
+
+        <div class="sect">
+          <div class="sect-head">
+            <span class="sh">Attention needed</span>
+            <span class="cnt">2 alerts</span>
+          </div>
+          <div class="alert crit">
+            <span class="ai"></span>
+            <span class="txt">
+              <div class="at">Zeus — disk is 100% full</div>
+              <div class="asub">root@10.0.0.12 · / · 0 B free of 40 GB</div>
+            </span>
+            <button class="abtn">Free up space</button>
+          </div>
+          <div class="alert warn">
+            <span class="ai"></span>
+            <span class="txt">
+              <div class="at">Hades — set to stay connected, but isn't</div>
+              <div class="asub">root@192.168.1.40 · last seen 14h ago</div>
+            </span>
+            <button class="abtn">Reconnect</button>
+          </div>
+        </div>
+
+        <div class="lower">
+          <div>
+            <div class="sect">
+              <div class="sect-head"><span class="sh">Recently added</span><span class="cnt">5</span></div>
+              <div class="recent-list">
+                <div class="rrow">
+                  <span class="av">NY</span>
+                  <span class="rn2"><div class="rn">Nyx</div><div class="ra">admin@192.168.1.41</div></span>
+                  <span class="rt">port 2222</span>
+                </div>
+                <div class="rrow">
+                  <span class="av">HE</span>
+                  <span class="rn2"><div class="rn">Helios</div><div class="ra">ubuntu@10.0.0.24</div></span>
+                  <span class="rt">ssh</span>
+                </div>
+              </div>
+            </div>
+            <div class="sect">
+              <div class="sect-head"><span class="sh">Favorites</span></div>
+              <div class="fav-wrap">
+                <button class="fav"><span class="fn">Atlas</span><span class="fa">10.0.0.18</span></button>
+                <button class="fav"><span class="fn">Helios</span><span class="fa">10.0.0.24</span></button>
+              </div>
+            </div>
+          </div>
+          <div>
+            <div class="sect">
+              <div class="sect-head"><span class="sh">Recent activity</span></div>
+              <div class="feed">
+                <div class="actrow"><span class="ft">2m</span><span class="fmid"><span class="fh">Atlas</span><span class="fk">terminal</span></span></div>
+                <div class="actrow"><span class="ft">18m</span><span class="fmid"><span class="fh">Zeus</span><span class="fk">host metrics</span></span></div>
+                <div class="actrow"><span class="ft">1h</span><span class="fmid"><span class="fh">Helios</span><span class="fk">files</span></span></div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+      </div>
+    </div>
+  </div>
+
+  <!-- ── Mikro tipografi: letter-spacing'in en agresif olduğu yerler ────── -->
+  <div class="frame" style="margin-top:24px">
+    <h3>Mikro etiketler — letter-spacing Geist'e göre ayarlanmıştı</h3>
+    <div class="in">
+      <table class="micro-tbl">
+        <tr><td>.sect-head .sh &middot; 11px / .13em</td><td><span class="sh" style="font-size:var(--fs-2);font-weight:600;letter-spacing:.13em;text-transform:uppercase;color:var(--dim)">Recently added &nbsp; Attention needed &nbsp; Favorites</span></td></tr>
+        <tr><td>.grouphdr .gname &middot; 11px / .1em</td><td><span class="gname" style="font-size:var(--fs-2);text-transform:uppercase;letter-spacing:.1em;font-weight:600;color:var(--dim)">Homelab &nbsp; Production &nbsp; Staging</span></td></tr>
+        <tr><td>.tb-brand &middot; 13px / .14em / 700</td><td><span style="font-weight:700;letter-spacing:.14em;font-size:var(--fs-3)">PORTAL</span></td></tr>
+        <tr><td>.hf-k &middot; 10px / .12em</td><td><span style="font-size:var(--fs-1);text-transform:uppercase;letter-spacing:.12em;color:var(--dim);font-weight:600">Address &nbsp; Username &nbsp; Port &nbsp; Auth</span></td></tr>
+        <tr><td>.h-auto &middot; 9.5px / .08em / 700</td><td><span class="h-auto">auto-connect</span></td></tr>
+      </table>
+    </div>
+  </div>
+
+  <!-- ── Mono: en küçük boyutlar + karışabilecek karakterler ─────────────── -->
+  <div class="frame" style="margin-top:24px">
+    <h3>Commit Mono — en küçük boyutlar</h3>
+    <div class="in">
+      <table class="micro-tbl">
+        <tr><td>13px &middot; terminal</td><td style="font-family:var(--mono);font-size:13px">root@10.0.0.12:22  Il1|0O  rn/m  98.4%  ~/.ssh/id_ed25519</td></tr>
+        <tr><td>11px &middot; sürüm / statusbar</td><td style="font-family:var(--mono);font-size:11px">root@10.0.0.12:22  Il1|0O  rn/m  98.4%  ~/.ssh/id_ed25519</td></tr>
+        <tr><td>10.5px &middot; host adresi</td><td style="font-family:var(--mono);font-size:10.5px">root@10.0.0.12:22  Il1|0O  rn/m  98.4%  ~/.ssh/id_ed25519</td></tr>
+        <tr><td>9.5px &middot; statusbar mono</td><td style="font-family:var(--mono);font-size:9.5px">root@10.0.0.12:22  Il1|0O  rn/m  98.4%  ~/.ssh/id_ed25519</td></tr>
+        <tr><td>18px / 500 &middot; metrik</td><td style="font-family:var(--mono);font-size:18px;font-weight:500;font-variant-numeric:tabular-nums">2d 06h 41m &nbsp; 3 / 5 &nbsp; 98.4% &nbsp; 1234567890</td></tr>
+        <tr><td>11px / 600 &middot; avatar</td><td style="font-family:var(--mono);font-size:11px;font-weight:600">NY &nbsp; HE &nbsp; AT &nbsp; ZE &nbsp; HA</td></tr>
+      </table>
+    </div>
+  </div>
+
+  <div class="statusbar" style="margin-top:24px;border:1px solid var(--border);border-radius:var(--r-4)">
+    <span>Panels are draggable &amp; resizable — drag a tab to dock</span>
+    <span class="sb-div">·</span>
+    <span><span class="kbd-i">Ctrl</span>+<span class="kbd-i">K</span> reset layout</span>
+    <span class="sp"></span>
+    <span class="sb-mono">UTF-8</span>
+    <span class="sb-div">·</span>
+    <span class="sb-mono">xterm-256color</span>
+    <span class="sb-div">·</span>
+    <span class="sb-seg"><span class="dot on"></span><span class="sb-mono">Zeus · SSH · 10.0.0.12</span></span>
+  </div>
+
+</div>
+
+<script>
+document.fonts.ready.then(() => {
+  const c = document.createElement("canvas").getContext("2d");
+  const w = (f) => { c.font = '13px "' + f + '"'; return c.measureText("root@10.0.0.12 Il1|0O").width; };
+  const fb = w("__no_such_font__");
+  const sw = w("Switzer"), cm = w("Commit Mono");
+  const ok = sw !== fb && cm !== fb && document.fonts.size > 0;
+  document.getElementById("verdict").innerHTML = ok
+    ? '<span class="pass">● Switzer + Commit Mono yüklendi (' + document.fonts.size + ' face)</span>'
+    : '<span class="fail">● Font yüklenemedi — sistem fontuna düştü</span>';
+});
+</script>
+</body>
+</html>

@@ -1,0 +1,212 @@
+// Rust (src-tauri) DTO'larının TS karşılıkları. Bkz. portal-core::model.
+
+export interface Host {
+  id: string;
+  label: string;
+  address: string;
+  port: number;
+  username?: string | null;
+  identity_id?: string | null;
+  folder_id?: string | null;
+  jump_host_id?: string | null;
+  forward_agent?: boolean;
+  auto_connect?: boolean;
+  tags?: string[];
+  note?: string | null;
+}
+
+export interface Folder {
+  id: string;
+  name: string;
+  parent_id?: string | null;
+}
+
+export interface Bootstrap {
+  theme: string;
+  onboarded: boolean;
+  locked: boolean;
+  profile: string | null;
+  // Aktif profilde kurtarma cümlesi tanımlı mı (kilit ekranı recovery yolunu göstersin mi).
+  has_recovery: boolean;
+  device_label: string;
+  // Pencere kapatılınca tepsiye insin mi (Settings ▸ Appearance ▸ Window).
+  minimize_to_tray: boolean;
+  hosts: Host[];
+  folders: Folder[];
+}
+
+export interface Snippet {
+  id: string;
+  label: string;
+  command: string;
+  host_id?: string | null;
+}
+
+// ── Uptime monitörü ────────────────────────────────────
+export type MonitorTarget =
+  | { kind: "http"; url: string; expect_status?: number | null }
+  | { kind: "tcp"; host: string; port: number };
+
+export interface Monitor {
+  id: string;
+  label: string;
+  target: MonitorTarget;
+  interval_secs: number;
+  timeout_secs: number;
+  enabled: boolean;
+  host_id?: string | null;
+}
+
+export interface CheckResult {
+  monitor_id: string;
+  // Unix saniye (UTC).
+  at: number;
+  up: boolean;
+  latency_ms?: number | null;
+  status?: number | null;
+  error?: string | null;
+}
+
+export interface DayStat {
+  // Gün numarası: unix saniye / 86400 (UTC).
+  day: number;
+  up: number;
+  down: number;
+  latency_sum_ms: number;
+}
+
+export type MonitorState = "unknown" | "up" | "down";
+
+export interface MonitorSummary {
+  monitor: Monitor;
+  state: MonitorState;
+  last: CheckResult | null;
+  today: DayStat;
+  days: DayStat[];
+  recent: CheckResult[];
+}
+
+// Form → Rust (monitor_from). Boş label hedeften türetilir.
+export interface MonitorInput {
+  label: string;
+  kind: "http" | "tcp";
+  target: string;
+  port: number | null;
+  expectStatus: number | null;
+  intervalSecs: number;
+  timeoutSecs: number;
+  enabled: boolean;
+  hostId: string | null;
+}
+
+// ── Profil / senkron (Faz 3-C) ─────────────────────────
+export interface ProfileInfo {
+  id: string;
+  name: string;
+  lockedWithPassword: boolean;
+  active: boolean;
+}
+
+// Senkron durumu (şifre çözülmeden zarf başlığından okunur).
+export interface SyncInfo {
+  dir: string | null;
+  label: string | null;
+  localUpdated: number | null;
+  localDevice: string | null;
+  remoteUpdated: number | null;
+  remoteDevice: string | null;
+}
+
+export interface SyncResult {
+  message: string;
+  locked: boolean;
+}
+
+// Bağlanma-anı kimliği (sır asla diske yazılmaz).
+export type Auth =
+  | { kind: "password"; password: string }
+  | { kind: "key"; path: string; passphrase?: string };
+
+// ── SFTP / yerel dosya ─────────────────────────────────
+export interface RemoteEntry {
+  name: string;
+  isDir: boolean;
+  isSymlink: boolean;
+  size: number;
+}
+export interface LocalEntry {
+  name: string;
+  path: string;
+  isDir: boolean;
+  size: number;
+}
+export interface LocalListing {
+  path: string;
+  parent: string | null;
+  entries: LocalEntry[];
+}
+
+// ── Oturum olayları (Rust → web, portal://ssh|sftp|metrics/{id}) ──
+export type ShellMsg =
+  | { type: "hostKey"; host: string; port: number; keyType: string; fingerprint: string; changed: boolean }
+  | { type: "connected" }
+  | { type: "output"; data: string } // base64
+  | { type: "disconnected"; message: string }
+  | { type: "error"; message: string };
+
+export type SftpMsg =
+  | { type: "hostKey"; host: string; port: number; keyType: string; fingerprint: string; changed: boolean }
+  | { type: "ready" }
+  | { type: "listing"; path: string; entries: RemoteEntry[] }
+  | { type: "listError"; path: string; message: string }
+  | { type: "transferQueued"; id: number; kind: "upload" | "download"; name: string; total: number }
+  | { type: "transferProgress"; id: number; transferred: number }
+  | { type: "transferDone"; id: number }
+  | { type: "transferFailed"; id: number; message: string }
+  | { type: "transferCancelled"; id: number }
+  | { type: "error"; message: string };
+
+export interface ProcInfo {
+  pid: number;
+  user: string;
+  cpu: number;
+  mem: number;
+  command: string;
+}
+export interface DiskInfo {
+  filesystem: string;
+  mount: string;
+  usedKb: number;
+  totalKb: number;
+  pct: number;
+}
+export interface Metrics {
+  cpuPct: number;
+  memUsedKb: number;
+  memTotalKb: number;
+  memPct: number;
+  diskUsedKb: number;
+  diskTotalKb: number;
+  diskPct: number;
+  netRxBps: number;
+  netTxBps: number;
+  load1: number;
+  load5: number;
+  load15: number;
+  cores: number;
+  processes: number;
+  uptime: string;
+  topProcesses: ProcInfo[];
+  disks: DiskInfo[];
+}
+
+export type MetricsMsg =
+  | { type: "hostKey"; host: string; port: number; keyType: string; fingerprint: string; changed: boolean }
+  | { type: "update"; metrics: Metrics }
+  | { type: "error"; message: string };
+
+export interface SessionInfo {
+  id: number;
+  kind: string;
+  hostId: string;
+}
