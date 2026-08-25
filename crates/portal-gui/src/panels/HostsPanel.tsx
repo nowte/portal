@@ -10,6 +10,7 @@ import { createPortal } from "react-dom";
 import {
   Check,
   ChevronDown,
+  KeyRound,
   PanelsTopLeft,
   Pencil,
   Search,
@@ -17,6 +18,7 @@ import {
   Trash2,
 } from "lucide-react";
 import { usePortal } from "../context";
+import { forgetCreds, hostIsCached } from "../lib/ipc";
 import { openGateway, openTerminal } from "../dock/dock";
 import type { Host } from "../lib/types";
 import { ErrorNote } from "../components/ErrorNote";
@@ -62,6 +64,23 @@ export function HostsPanel() {
   const [form, setForm] = useState<FormState | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const [menu, setMenu] = useState<{ id: string; x: number; y: number } | null>(null);
+  // "Oto şifre girme": bu host'un kimliği hazır mı (bellek önbelleği ya da vault'taki
+  // sır). Açıksa düzenleme formunda kaldırma seçeneği çıkar.
+  const [savedCreds, setSavedCreds] = useState(false);
+  useEffect(() => {
+    const id = form?.id;
+    if (!id) {
+      setSavedCreds(false);
+      return;
+    }
+    let alive = true;
+    void hostIsCached(id)
+      .then((v) => alive && setSavedCreds(v))
+      .catch(() => undefined);
+    return () => {
+      alive = false;
+    };
+  }, [form?.id]);
 
   const filtered = useMemo(
     () =>
@@ -271,6 +290,25 @@ export function HostsPanel() {
                 Keep connected — <b>connect in the background</b> when Portal starts
               </span>
             </button>
+            {savedCreds && form.id && (
+              <button
+                className="hf-toggle lit"
+                onClick={() => {
+                  const id = form.id;
+                  if (!id) return;
+                  setErr(null);
+                  void forgetCreds(id)
+                    .then(() => setSavedCreds(false))
+                    .catch((e: unknown) => setErr(String(e)));
+                }}
+                title="Portal will ask for the password (or key passphrase) the next time you connect."
+              >
+                <KeyRound size={16} strokeWidth={1.75} />
+                <span>
+                  Signs in without asking — <b>forget the saved password</b>
+                </span>
+              </button>
+            )}
             </div>
 
             {err && (
