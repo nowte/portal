@@ -283,12 +283,17 @@ input, textarea, select { font: inherit; }
 }
 .search:has(input:focus-visible),
 .sin:has(input:focus-visible),
-.pal-in:has(input:focus-visible),
 .fwrap:has(input:focus-visible),
 .fwrap:has(textarea:focus-visible) {
   outline: 2px solid var(--primary);
   outline-offset: 2px;
 }
+/* Komut paletinin alanı halka ALMAZ (§10'un "görünür alternatif" izni). Palet
+   yalnız o alana yazmak için açılır, odak hep oradadır ve Tab dışarı çıkmaz →
+   halka hiçbir bilgi taşımıyor. Taşıdığı tek şey sorun oluyordu: 2px offset'le
+   alanın ALT kenarı listenin ilk satırının (Reset layout) üstüne biniyor, beyaz
+   bir çizgi olarak duruyor ve o satır hover olunca altında kalıyordu. */
+.pal-in:has(input:focus-visible) { outline: none; }
 /* Yol kutusu kendi başına yuvarlak → halkayı kendi yarıçapıyla alır. */
 .fpath-edit:focus-visible {
   outline: 2px solid var(--primary);
