@@ -34,6 +34,7 @@ import {
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
 import { usePortal } from "../context";
 import { ErrorNote } from "../components/ErrorNote";
+import { useModal } from "../lib/modal";
 import { openEditor } from "../dock/dock";
 import { setGuideTopic } from "../lib/guide";
 import { requestAuth } from "../components/AuthDialog";
@@ -301,6 +302,7 @@ function FindBar({
       <button
         className="tool"
         title="Close filter"
+        aria-label="Close filter"
         onClick={() => onView({ ...view, filter: "", finding: false })}
       >
         <X size={16} strokeWidth={1.75} />
@@ -429,22 +431,38 @@ export function FilesPanel({
     if (id != null) void sftpList(id, path || ".");
   }, []);
 
+  // Bağlanma denemesi sayacı — iptal edilen bir deneme geri döndüğünde kendi
+  // oturumunu kapatır ve ekranı ezmez. Bkz. TerminalPanel (aynı desen).
+  const genRef = useRef(0);
+  // "Bağlı değil" kartının alt satırı. `message` uzak panelin hata şeridine ait,
+  // ikisi karışmasın.
+  const [idleNote, setIdleNote] = useState("");
+
   const connect = useCallback(async () => {
     if (!host) return;
     setPhase("connecting");
+    setIdleNote("");
+    const gen = ++genRef.current;
+    const stale = () => gen !== genRef.current;
     const cached = await hostIsCached(hostId);
+    if (stale()) return;
     let auth;
     if (!cached) {
       const a = await requestAuth(host);
+      if (stale()) return;
       if (!a) {
         setPhase("error");
-        setMessage("Connect cancelled.");
+        setMessage("Cancelled — nothing was sent to the server. Press Retry when you're ready.");
         return;
       }
       auth = a;
     }
     try {
       const id = await connectFiles(hostId, auth);
+      if (stale()) {
+        void closeSession(id);
+        return;
+      }
       sessionRef.current = id;
       reportConn(id, hostId, "files", "connecting", paneId);
       unlistenRef.current = await onSftp(id, (m) => {
@@ -513,10 +531,41 @@ export function FilesPanel({
         }
       });
     } catch (e) {
+      if (stale()) return;
       setPhase("error");
       setMessage(String(e));
     }
   }, [host, hostId, paneId, loadLocal, loadRemote, reportConn]);
+
+  // Üç küçük diyalog da modal davranışını TEK yerden alır (Esc + odak tuzağı):
+  // buradaki × ile Esc aynı şeyi yapar, kaçış tuşu her zaman geri dönüş yoludur.
+  const nameBoxRef = useRef<HTMLDivElement>(null);
+  const conflictBoxRef = useRef<HTMLDivElement>(null);
+  const delBoxRef = useRef<HTMLDivElement>(null);
+  useModal(nameBoxRef, () => setNameDlg(null), nameDlg !== null);
+  useModal(conflictBoxRef, () => setConflict(null), conflict !== null);
+  useModal(delBoxRef, () => setConfirmDel(null), confirmDel !== null);
+
+  // Bağlanmayı yarıda kes; çekirdek el sıkışmayı da keser (ssh.rs Cancel).
+  const cancelConnect = () => {
+    genRef.current++;
+    if (unlistenRef.current) {
+      unlistenRef.current();
+      unlistenRef.current = null;
+    }
+    const id = sessionRef.current;
+    if (id != null) {
+      void closeSession(id);
+      dropConn(id);
+    }
+    sessionRef.current = null;
+    readyRef.current = false;
+    setPhase("idle");
+    // İptal edilen bir bağlanma "düzen geri yüklendi" DEĞİLDİR: idle kartı
+    // kullanıcının az önce yaptığı şeyi anlatsın.
+    setIdleNote("Cancelled before the server answered.");
+    setMessage("");
+  };
 
   // Terminal'dekiyle AYNI geri dönüş yolu: dinleyiciyi sök, oturumu kapat, kaydı
   // düşür (yoksa sekmedeki işaret ölü oturumu gösterir), baştan bağlan.
@@ -769,7 +818,9 @@ export function FilesPanel({
     if (id != null) void hostKeyDecision(id, accept);
     if (!accept) {
       setPhase("error");
-      setMessage("Host key rejected.");
+      setMessage(
+        "You didn't trust this server's key, so Portal stopped before signing in. Retry to see the fingerprint again.",
+      );
     }
   };
 
@@ -882,6 +933,7 @@ export function FilesPanel({
       <button
         className={"tool" + (view.finding ? " on" : "")}
         title="Filter this folder"
+        aria-label="Filter this folder"
         onClick={() => onView({ ...view, finding: !view.finding, filter: "" })}
       >
         <Search size={16} strokeWidth={1.75} />
@@ -889,6 +941,8 @@ export function FilesPanel({
       <button
         className={"tool" + (view.hidden ? " on" : "")}
         title={view.hidden ? "Hide hidden files" : "Show hidden files"}
+        aria-label={view.hidden ? "Hide hidden files" : "Show hidden files"}
+        aria-pressed={view.hidden}
         onClick={() => onView({ ...view, hidden: !view.hidden })}
       >
         {view.hidden ? (
@@ -908,7 +962,7 @@ export function FilesPanel({
       {phase === "ready" && message && (
         <div className="files-note">
           <ErrorNote>{message}</ErrorNote>
-          <button className="tool" title="Dismiss" onClick={() => setMessage("")}>
+          <button className="tool" title="Dismiss" aria-label="Dismiss this message" onClick={() => setMessage("")}>
             <X size={16} strokeWidth={1.75} />
           </button>
         </div>
@@ -938,6 +992,7 @@ export function FilesPanel({
             <button
               className="tool"
               title="Up"
+              aria-label="Go up one folder on this PC"
               onClick={() => local?.parent && void loadLocal(local.parent)}
               disabled={!local?.parent}
             >
@@ -972,7 +1027,9 @@ export function FilesPanel({
             {localErr && <div className="empty term-err">{localErr}</div>}
             {!localErr && localRows.length === 0 && (
               <div className="empty">
-                {localView.filter.trim() ? "No file matches that filter." : "This folder is empty."}
+                {localView.filter.trim()
+                  ? "No file matches that filter — clear it to see everything again."
+                  : "This folder is empty. Type a path in the box above to go somewhere else."}
               </div>
             )}
             {localRows.map((en: LocalEntry) => (
@@ -1016,6 +1073,11 @@ export function FilesPanel({
                 ? `Upload ${selLocalFiles.length} files to the host`
                 : "Upload selected file to the host"
             }
+            aria-label={
+              selLocalFiles.length > 1
+                ? `Upload ${selLocalFiles.length} files to the host`
+                : "Upload selected file to the host"
+            }
             onClick={uploadSelected}
             disabled={phase !== "ready" || selLocalFiles.length === 0}
           >
@@ -1024,6 +1086,11 @@ export function FilesPanel({
           <button
             className="mid-x"
             title={
+              selRemoteFiles.length > 1
+                ? `Download ${selRemoteFiles.length} files to this PC`
+                : "Download selected file to this PC"
+            }
+            aria-label={
               selRemoteFiles.length > 1
                 ? `Download ${selRemoteFiles.length} files to this PC`
                 : "Download selected file to this PC"
@@ -1059,6 +1126,7 @@ export function FilesPanel({
             <button
               className="tool"
               title="New folder"
+              aria-label="New folder on the server"
               onClick={() => setNameDlg({ mode: "mkdir", value: "" })}
               disabled={phase !== "ready"}
             >
@@ -1068,6 +1136,7 @@ export function FilesPanel({
             <button
               className="tool"
               title="Up"
+              aria-label="Go up one folder on the server"
               onClick={remoteGoUp}
               disabled={!remotePath || remotePath === "/"}
             >
@@ -1104,10 +1173,10 @@ export function FilesPanel({
                 if (e.target === e.currentTarget) setRemoteEdit(remotePath);
               }}
             >
-              <button className="crumb" onClick={() => goRemote("")} title="Home">
+              <button className="crumb" onClick={() => goRemote("")} title="Home" aria-label="Go to the home folder">
                 ~
               </button>
-              <button className="crumb" onClick={() => goRemote("/")} title="Filesystem root">
+              <button className="crumb" onClick={() => goRemote("/")} title="Filesystem root" aria-label="Go to the filesystem root">
                 /
               </button>
               {crumbs(remotePath).map((c) => (
@@ -1134,7 +1203,7 @@ export function FilesPanel({
               <div className="pane-idle">
                 <div className="pane-idle-t">Not connected</div>
                 <div className="pane-idle-s">
-                  Portal restored this panel's position but didn't reconnect on its own.
+                  {idleNote || "Portal restored this panel's position but didn't reconnect on its own."}
                 </div>
                 <button className="btn-primary" onClick={() => void connect()}>
                   <span>Connect</span>
@@ -1142,9 +1211,15 @@ export function FilesPanel({
               </div>
             )}
             {phase === "connecting" && (
-              <div className="conn-row">
-                <span className="st" />
-                Connecting…
+              /* Bağlanırken de bir çıkış var (P11). */
+              <div className="err-retry">
+                <div className="conn-row">
+                  <span className="st" />
+                  Connecting…
+                </div>
+                <button className="btn-ghost" onClick={cancelConnect}>
+                  Cancel
+                </button>
               </div>
             )}
             {phase === "error" && (
@@ -1181,7 +1256,9 @@ export function FilesPanel({
             )}
             {phase === "ready" && !remoteErr && remoteRows.length === 0 && (
               <div className="empty">
-                {remoteView.filter.trim() ? "No file matches that filter." : "This folder is empty."}
+                {remoteView.filter.trim()
+                  ? "No file matches that filter — clear it to see everything again."
+                  : "This folder is empty. Drag a file in from the left, or press Upload."}
               </div>
             )}
             {phase === "ready" &&
@@ -1283,6 +1360,7 @@ export function FilesPanel({
                       <button
                         className="tool"
                         title="Cancel"
+                        aria-label={`Cancel the transfer of ${t.name}`}
                         onClick={() => {
                           const id = sessionRef.current;
                           if (id != null) void sftpCancel(id, t.id);
@@ -1374,7 +1452,14 @@ export function FilesPanel({
       {/* İsim dialog'u (yeni klasör / yeniden adlandır) */}
       {nameDlg && (
         <div className="overlay" onMouseDown={(e) => e.target === e.currentTarget && setNameDlg(null)}>
-          <div className="dialog" role="dialog" aria-label={nameDlg.mode === "mkdir" ? "New folder" : "Rename"}>
+          <div
+            ref={nameBoxRef}
+            tabIndex={-1}
+            className="dialog"
+            role="dialog"
+            aria-modal="true"
+            aria-label={nameDlg.mode === "mkdir" ? "New folder" : "Rename"}
+          >
             <div className="dlg-head">
               <span className="dlg-title">{nameDlg.mode === "mkdir" ? "New folder" : "Rename"}</span>
               <button className="dlg-x" aria-label="Close" onClick={() => setNameDlg(null)}>
@@ -1410,7 +1495,14 @@ export function FilesPanel({
           davranıştı — SFTP `create` ve yerel `File::create` ikisi de kırpar. */}
       {clash && (
         <div className="overlay">
-          <div className="dialog" role="dialog" aria-label="File already exists">
+          <div
+            ref={conflictBoxRef}
+            tabIndex={-1}
+            className="dialog"
+            role="dialog"
+            aria-modal="true"
+            aria-label="File already exists"
+          >
             <div className="dlg-head">
               <span className="dlg-title">That name is taken</span>
               <button className="dlg-x" aria-label="Close" onClick={() => setConflict(null)}>
@@ -1472,7 +1564,14 @@ export function FilesPanel({
       {/* Silme onayı */}
       {confirmDel && confirmDel.length > 0 && (
         <div className="overlay" onMouseDown={(e) => e.target === e.currentTarget && setConfirmDel(null)}>
-          <div className="dialog" role="dialog" aria-label="Delete">
+          <div
+            ref={delBoxRef}
+            tabIndex={-1}
+            className="dialog"
+            role="dialog"
+            aria-modal="true"
+            aria-label="Delete"
+          >
             <div className="dlg-head">
               <span className="dlg-title">
                 {confirmDel.length > 1

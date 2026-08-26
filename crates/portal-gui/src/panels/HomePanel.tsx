@@ -540,7 +540,10 @@ export function HomePanel() {
                 </button>
               </div>
               {activity.length === 0 ? (
-                <div className="empty">No sessions opened yet on this machine.</div>
+                <div className="empty">
+                    Nothing opened yet on this machine. Connect to a server and what you
+                    open shows up here — stored locally, never uploaded.
+                  </div>
               ) : (
                 <div className="feed">
                   {activity.slice(0, 12).map((a, i) => {

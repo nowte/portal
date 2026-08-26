@@ -15,7 +15,7 @@ pub type Result<T> = std::result::Result<T, Error>;
 #[non_exhaustive]
 pub enum Error {
     /// Bir dosya yolunda I/O hatası; yol bağlamı korunur.
-    #[error("I/O hatası: {path}")]
+    #[error("Couldn't read or write {path}: {source}. Check the file still exists and that Portal is allowed to write there.")]
     Io {
         /// Hataya yol açan dosya/dizin yolu.
         path: PathBuf,
@@ -25,15 +25,17 @@ pub enum Error {
     },
 
     /// TOML serileştirme (config yazma) hatası.
-    #[error("TOML yazılamadı")]
+    #[error(
+        "Couldn't save Portal's settings file: {0}. Close anything else editing it and try again."
+    )]
     TomlSerialize(#[from] toml::ser::Error),
 
     /// TOML ayrıştırma (config okuma) hatası.
-    #[error("TOML ayrıştırılamadı")]
+    #[error("Portal's settings file is damaged and couldn't be read: {0}. Delete config.toml in Portal's data folder to start from defaults.")]
     TomlParse(#[from] toml::de::Error),
 
     /// JSON (de)serileştirme hatası — vault kalıcılığı.
-    #[error("JSON (de)serileştirilemedi")]
+    #[error("Portal couldn't read its vault contents: {0}. If this keeps happening, restore vault.portal.bak from Portal's data folder.")]
     Json(#[from] serde_json::Error),
 
     /// Vault şifreleme/çözme hatası (yanlış parola, bozuk dosya vb.).
@@ -45,7 +47,7 @@ pub enum Error {
     Keyring(String),
 
     /// Vault kilitli — yazma/okuma öncesi kilit açılmalı (parola gerekir).
-    #[error("vault is locked; unlock it first")]
+    #[error("This profile is locked. Unlock it with your password before changing anything.")]
     VaultLocked,
 
     /// Sır saklanmak istendi ama vault ŞİFRELİ DEĞİL (profil yok → düz metin JSON).
@@ -62,7 +64,7 @@ pub enum Error {
     Sync(String),
 
     /// Platforma özgü veri/konfig dizinleri çözülemedi (ör. home dizini yok).
-    #[error("Portal için platform dizinleri belirlenemedi")]
+    #[error("Portal couldn't work out where to keep its data on this machine. Check that your user profile folder is reachable.")]
     NoProjectDirs,
 }
 

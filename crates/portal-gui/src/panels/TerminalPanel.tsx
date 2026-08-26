@@ -11,6 +11,7 @@ import { WebglAddon } from "@xterm/addon-webgl";
 import "@xterm/xterm/css/xterm.css";
 import { ArrowDown, ArrowUp, ExternalLink, X } from "lucide-react";
 import { usePortal } from "../context";
+import { useModal } from "../lib/modal";
 import { setGuideTopic } from "../lib/guide";
 import { requestAuth } from "../components/AuthDialog";
 import { HostKeyModal, type HostKeyReq } from "../components/HostKeyModal";
@@ -91,6 +92,11 @@ export function TerminalPanel({
 
   useEffect(() => setGuideTopic("terminal"), []);
 
+  // Bağlanma denemesi sayacı. İptal edilen bir deneme (TCP/auth hâlâ uçuşta)
+  // sonradan döndüğünde kendi oturumunu kapatır ve ekranı EZMEZ — yoksa iptalden
+  // sonra panel kendiliğinden yeniden bağlanıyormuş gibi görünürdü.
+  const genRef = useRef(0);
+
   const connect = useCallback(async () => {
     const term = termRef.current;
     const fit = fitRef.current;
@@ -99,11 +105,15 @@ export function TerminalPanel({
     setMessage("");
     setPhase("connecting");
     connectedRef.current = false;
+    const gen = ++genRef.current;
+    const stale = () => gen !== genRef.current;
 
     const cached = await hostIsCached(hostId);
+    if (stale()) return;
     let auth;
     if (!cached) {
       const a = await requestAuth(host);
+      if (stale()) return;
       if (!a) {
         setPhase("idle");
         return;
@@ -113,6 +123,12 @@ export function TerminalPanel({
 
     try {
       const id = await connectShell(hostId, term.cols, term.rows, auth);
+      // İptal denemenin ARDINDAN döndüyse oturumu burada kapat: çekirdek el
+      // sıkışmayı keser, ortada sahipsiz bir bağlantı kalmaz.
+      if (stale()) {
+        void closeSession(id);
+        return;
+      }
       sessionRef.current = id;
       reportConn(id, hostId, "shell", "connecting", paneId);
       const unlisten = await onShell(id, (m) => {
@@ -148,9 +164,14 @@ export function TerminalPanel({
             break;
         }
       });
+      if (stale()) {
+        unlisten();
+        return;
+      }
       // Dinleyici temizliğini session'a bağla.
       unlistenRef.current = unlisten;
     } catch (e) {
+      if (stale()) return;
       setPhase("error");
       setMessage(String(e));
     }
@@ -336,8 +357,28 @@ export function TerminalPanel({
     if (id != null) void hostKeyDecision(id, accept);
     if (!accept) {
       setPhase("error");
-      setMessage("Host key rejected.");
+      setMessage(
+        "You didn't trust this server's key, so Portal stopped before signing in. Reconnect to see the fingerprint again.",
+      );
     }
+  };
+
+  // Bağlanmayı yarıda kes. Çekirdekte `close()` el sıkışmayı da keser (ssh.rs
+  // Cancel) — kullanıcı ulaşılamayan bir host'un zaman aşımını beklemez.
+  const cancelConnect = () => {
+    genRef.current++;
+    if (unlistenRef.current) {
+      unlistenRef.current();
+      unlistenRef.current = null;
+    }
+    const id = sessionRef.current;
+    if (id != null) {
+      void closeSession(id);
+      dropConn(id);
+    }
+    sessionRef.current = null;
+    setPhase("idle");
+    setMessage("Cancelled before the server answered. Press Reconnect to try again.");
   };
 
   const retry = () => {
@@ -355,6 +396,10 @@ export function TerminalPanel({
     commandRef.current = command;
     void connect();
   };
+
+  // Bağlantı onayı da modal davranışını tek yerden alır: Esc = açma (güvenli taraf).
+  const linkBoxRef = useRef<HTMLDivElement>(null);
+  useModal(linkBoxRef, () => setLinkUrl(null), linkUrl !== null);
 
   const hitLabel = hits.count > 0 ? `${hits.index + 1}/${hits.count}` : "no match";
 
@@ -420,9 +465,16 @@ export function TerminalPanel({
       {!hadOutput && phase !== "connected" && !hostKey && (
         <div className="term-overlay">
           {phase === "connecting" ? (
-            <div className="term-status">
-              <span className="st" />
-              Connecting…
+            /* Bağlanırken de bir çıkış var: ulaşılamayan bir host'un zaman
+               aşımı ~21 sn — kullanıcı ona mahkum edilmez (P11). */
+            <div className="term-card">
+              <div className="term-status">
+                <span className="st" />
+                Connecting…
+              </div>
+              <button className="btn-ghost" onClick={cancelConnect}>
+                Cancel
+              </button>
             </div>
           ) : (
             <div className="term-card">
@@ -451,9 +503,16 @@ export function TerminalPanel({
           <span className="term-bar-t">
             {phase === "connecting"
               ? "Reconnecting…"
-              : message || (phase === "error" ? "Connection failed." : "Disconnected.")}
+              : message ||
+                (phase === "error"
+                  ? "Couldn't reach the server. Check that it's online and reachable, then reconnect."
+                  : "The session ended. Reconnect to start a new shell — the output above stays.")}
           </span>
-          {phase !== "connecting" && (
+          {phase === "connecting" ? (
+            <button className="term-btn" onClick={cancelConnect}>
+              Cancel
+            </button>
+          ) : (
             <button className="term-btn" onClick={retry}>
               Reconnect
             </button>
@@ -467,7 +526,14 @@ export function TerminalPanel({
           className="overlay"
           onMouseDown={(e) => e.target === e.currentTarget && setLinkUrl(null)}
         >
-          <div className="dialog" role="dialog" aria-label="Open link">
+          <div
+            ref={linkBoxRef}
+            tabIndex={-1}
+            className="dialog"
+            role="dialog"
+            aria-modal="true"
+            aria-label="Open link"
+          >
             <div className="dlg-head">
               <span className="dlg-title">
                 <span className="dlg-ic-wrap">

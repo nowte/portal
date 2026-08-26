@@ -146,12 +146,13 @@ export function GatewayPanel({ hostId }: { hostId: string }) {
                 </button>
                 <span className="tag">{s.host_id ? "host" : "global"}</span>
                 <div className="snip-tools">
-                  <button className="snm-ic" title="Edit" onClick={() => openSnippets({ editId: s.id })}>
+                  <button className="snm-ic" title="Edit" aria-label={`Edit ${s.label}`} onClick={() => openSnippets({ editId: s.id })}>
                     <Pencil size={16} strokeWidth={1.75} />
                   </button>
                   <button
                     className="snm-ic"
                     title="Remove"
+                    aria-label={`Remove ${s.label}`}
                     onClick={() => void removeSnippet(s.id)}
                   >
                     <Trash2 size={16} strokeWidth={1.75} />

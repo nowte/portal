@@ -3,13 +3,14 @@
 //
 // Modül-düzeyi köprü (prop-drilling'siz): openSettings(tab?).
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Check, FolderSync, Lock, UserRound, X } from "lucide-react";
 import { usePortal } from "../context";
 import * as ipc from "../lib/ipc";
 import type { ProfileInfo, SyncInfo } from "../lib/types";
 import { THEME_OPTIONS } from "../lib/theme";
 import { SpinButton } from "./SpinButton";
+import { useModal } from "../lib/modal";
 
 type Tab = "appearance" | "profiles" | "sync";
 
@@ -28,6 +29,7 @@ export function Settings() {
   const { theme, changeTheme, boot, adoptBootstrap, refresh } = usePortal();
   const [open, setOpen] = useState(false);
   const [tab, setTab] = useState<Tab>("appearance");
+  const boxRef = useRef<HTMLDivElement>(null);
 
   const [profiles, setProfiles] = useState<ProfileInfo[]>([]);
   const [sync, setSync] = useState<SyncInfo | null>(null);
@@ -92,14 +94,8 @@ export function Settings() {
     }
   }, [open, tab, boot?.minimize_to_tray, boot?.notify_uptime, loadProfiles, loadSync]);
 
-  useEffect(() => {
-    if (!open) return;
-    const onEsc = (e: KeyboardEvent) => {
-      if (e.key === "Escape") setOpen(false);
-    };
-    window.addEventListener("keydown", onEsc);
-    return () => window.removeEventListener("keydown", onEsc);
-  }, [open]);
+  // Esc + odak tuzağı + odak iadesi: lib/modal.ts (tek kaynak).
+  useModal(boxRef, () => setOpen(false), open);
 
   if (!open) return null;
 
@@ -168,7 +164,7 @@ export function Settings() {
 
   return (
     <div className="overlay" onMouseDown={(e) => e.target === e.currentTarget && close()}>
-      <div className="settings" role="dialog" aria-label="Settings">
+      <div ref={boxRef} tabIndex={-1} className="settings" role="dialog" aria-modal="true" aria-label="Settings">
         <div className="set-head">
           <span className="set-title">Settings</span>
           <button className="dlg-x" aria-label="Close" onClick={close}>

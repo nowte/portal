@@ -5,13 +5,14 @@
 //
 // Modül-düzeyi köprü (prop-drilling'siz): openSnippets(intent?).
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AlertTriangle, Check, ChevronDown, Copy, Pencil, Plus, Search, Trash2, X, Zap } from "lucide-react";
 import { usePortal } from "../context";
 import * as ipc from "../lib/ipc";
 import { openTerminal } from "../dock/dock";
 import type { Host, Snippet } from "../lib/types";
 import { ErrorNote } from "./ErrorNote";
+import { useModal } from "../lib/modal";
 
 // Açılış niyeti: yeni komut (opsiyonel host kapsamıyla) ya da bir komutu düzenle.
 export interface SnippetsIntent {
@@ -45,6 +46,7 @@ interface FormState {
 export function SnippetsManager() {
   const { hosts } = usePortal();
   const [open, setOpen] = useState(false);
+  const boxRef = useRef<HTMLDivElement>(null);
   const [snips, setSnips] = useState<Snippet[]>([]);
   const [q, setQ] = useState("");
   const [form, setForm] = useState<FormState | null>(null);
@@ -99,16 +101,9 @@ export function SnippetsManager() {
     return () => un?.();
   }, [open, load]);
 
-  useEffect(() => {
-    if (!open) return;
-    const onEsc = (e: KeyboardEvent) => {
-      if (e.key !== "Escape") return;
-      if (form) setForm(null);
-      else setOpen(false);
-    };
-    window.addEventListener("keydown", onEsc);
-    return () => window.removeEventListener("keydown", onEsc);
-  }, [open, form]);
+  // Esc + odak tuzağı + odak iadesi: lib/modal.ts. Esc önce açık formu kapatır
+  // (kullanıcı yazdıklarını kaybetmeden bir adım geri gelsin), sonra modalı.
+  useModal(boxRef, () => (form ? setForm(null) : setOpen(false)), open);
 
   if (!open) return null;
   const close = () => setOpen(false);
@@ -219,13 +214,14 @@ export function SnippetsManager() {
         ) : (
           <div className="snm-actions">
             {s.host_id && (
-              <button className="snm-ic" title="Run in a new terminal" onClick={() => run(s)}>
+              <button className="snm-ic" title="Run in a new terminal" aria-label={`Run ${s.label} in a new terminal`} onClick={() => run(s)}>
                 <Zap size={16} strokeWidth={1.75} />
               </button>
             )}
             <button
               className={"snm-ic" + (copied === s.id ? " copied" : "")}
               title={copied === s.id ? "Copied" : "Copy command"}
+              aria-label={copied === s.id ? "Copied" : `Copy the command of ${s.label}`}
               onClick={() => copy(s)}
             >
               <Copy size={16} strokeWidth={1.75} />
@@ -233,10 +229,10 @@ export function SnippetsManager() {
                 <Check size={16} strokeWidth={2} />
               </span>
             </button>
-            <button className="snm-ic" title="Edit" onClick={() => startEdit(s)}>
+            <button className="snm-ic" title="Edit" aria-label={`Edit ${s.label}`} onClick={() => startEdit(s)}>
               <Pencil size={16} strokeWidth={1.75} />
             </button>
-            <button className="snm-ic" title="Remove" onClick={() => setConfirmId(s.id)}>
+            <button className="snm-ic" title="Remove" aria-label={`Remove ${s.label}`} onClick={() => setConfirmId(s.id)}>
               <Trash2 size={16} strokeWidth={1.75} />
             </button>
           </div>
@@ -247,7 +243,7 @@ export function SnippetsManager() {
 
   return (
     <div className="overlay" onMouseDown={(e) => e.target === e.currentTarget && close()}>
-      <div className="settings snm" role="dialog" aria-label="Saved commands">
+      <div ref={boxRef} tabIndex={-1} className="settings snm" role="dialog" aria-modal="true" aria-label="Saved commands">
         <div className="set-head">
           <span className="set-title">Saved commands</span>
           {!form && (

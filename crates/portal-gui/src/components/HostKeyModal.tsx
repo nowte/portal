@@ -3,7 +3,9 @@
 // Anahtar DEĞİŞMİŞSE (changed) olası MITM → güçlü uyarı + yalnız reddet (P6-D #5).
 // portal-core kararı handshake'e geri iletir (host_key_decision komutu).
 
+import { useRef } from "react";
 import { ShieldAlert, ShieldQuestion } from "lucide-react";
+import { useModal } from "../lib/modal";
 
 export interface HostKeyReq {
   host: string;
@@ -21,11 +23,19 @@ export function HostKeyModal({
   onDecision: (accept: boolean) => void;
 }) {
   const changed = req.changed;
+  const boxRef = useRef<HTMLDivElement>(null);
+  // Esc = REDDET. Bilinmeyen (ya da değişmiş) bir anahtarı kazara güvenmek yerine
+  // kaçış tuşu daima güvenli tarafa düşer.
+  useModal(boxRef, () => onDecision(false));
+
   return (
     <div className="overlay" onMouseDown={(e) => e.target === e.currentTarget && onDecision(false)}>
       <div
+        ref={boxRef}
+        tabIndex={-1}
         className="dialog"
         role="dialog"
+        aria-modal="true"
         aria-label={changed ? "Host key changed" : "Unknown host key"}
       >
         <div className="dlg-head">

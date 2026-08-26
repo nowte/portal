@@ -5,17 +5,22 @@
 // Connect/Files/Monitor host fiilleri Gateway/Terminal geldiğinde (Faz 3-B) eklenir.
 
 import { useEffect, useMemo, useRef, useState } from "react";
+import { useModal } from "../lib/modal";
 import { ArrowDown, ArrowUp, CornerDownLeft, Search } from "lucide-react";
 import { usePortal } from "../context";
 import {
   openFiles,
+  openGuide,
   openHome,
   openMonitor,
   openTerminal,
   resetLayout,
+  showSide,
   toggleGuide,
   toggleSidebar,
 } from "../dock/dock";
+import { openAddHost } from "../panels/HostsPanel";
+import { pinGuideTopic } from "../lib/guide";
 
 interface Cmd {
   group: string; // .k etiketi (Layout/View/Go/Host)
@@ -36,6 +41,7 @@ export function CommandPalette() {
   const [q, setQ] = useState("");
   const [idx, setIdx] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
+  const boxRef = useRef<HTMLDivElement>(null);
 
   // Sabit komutlar (hepsi P6-A'da gerçek) + her host için "git" komutu.
   const commands = useMemo<Cmd[]>(() => {
@@ -44,6 +50,24 @@ export function CommandPalette() {
       { group: "View", title: "Toggle Guide rail", run: toggleGuide },
       { group: "View", title: "Toggle sidebar", run: toggleSidebar },
       { group: "Go", title: "Home", arg: "— homepage & dashboard", run: openHome },
+      {
+        group: "Hosts",
+        title: "Add a server",
+        arg: "— opens the form, ready to type",
+        run: () => {
+          showSide("hosts");
+          openAddHost();
+        },
+      },
+      {
+        group: "Help",
+        title: "Keyboard shortcuts",
+        arg: "— open the Guide rail",
+        run: () => {
+          openGuide();
+          pinGuideTopic("keys");
+        },
+      },
     ];
     const hostCmds: Cmd[] = hosts.flatMap((h) => {
       const title = `${h.username ? `${h.username}@` : ""}${h.address}`;
@@ -126,15 +150,16 @@ export function CommandPalette() {
     return () => window.removeEventListener("keydown", onKey);
   }, []);
 
-  // Açıkken: gezinme/çalıştır/kapat. Input odaklan.
+  // Esc + odak tuzağı + odak iadesi: lib/modal.ts (tek kaynak).
+  useModal(boxRef, () => setOpen(false), open);
+
+  // Açıkken: gezinme/çalıştır. Input odaklan.
   useEffect(() => {
     if (!open) return;
     const t = setTimeout(() => inputRef.current?.focus(), 10);
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") {
-        e.preventDefault();
-        setOpen(false);
-      } else if (e.key === "ArrowDown") {
+      // Esc lib/modal.ts'te (tek kaynak) — burada yalnız gezinme ve çalıştırma.
+      if (e.key === "ArrowDown") {
         e.preventDefault();
         setIdx((i) => Math.min(i + 1, results.length - 1));
       } else if (e.key === "ArrowUp") {
@@ -171,23 +196,41 @@ export function CommandPalette() {
       className="overlay overlay-instant"
       onMouseDown={(e) => e.target === e.currentTarget && setOpen(false)}
     >
-      <div className="palette" role="dialog" aria-label="Command palette">
+      <div
+        ref={boxRef}
+        tabIndex={-1}
+        className="palette"
+        role="dialog"
+        aria-modal="true"
+        aria-label="Command palette"
+      >
         <div className="pal-in">
           <Search size={16} strokeWidth={1.75} />
+          {/* Combobox deseni: satırlar odak ALMAZ (ok tuşlarıyla gezilir), o
+              yüzden ekran okuyucuya seçili satır aria-activedescendant ile
+              bildirilir — yoksa arayüzde hiçbir şey olmuyormuş gibi görünür. */}
           <input
             ref={inputRef}
             placeholder="Type a command or host…"
             value={q}
             onChange={(e) => setQ(e.target.value)}
+            role="combobox"
+            aria-expanded="true"
+            aria-controls="pal-list"
+            aria-activedescendant={results.length ? `pal-i-${idx}` : undefined}
+            aria-label="Type a command or host"
           />
         </div>
-        <div className="pal-list">
+        <div className="pal-list" id="pal-list" role="listbox" aria-label="Commands">
           {results.length === 0 ? (
             <div className="pal-empty">No commands match.</div>
           ) : (
             results.map((c, i) => (
               <div
                 key={`${c.group}:${c.title}:${i}`}
+                id={`pal-i-${i}`}
+                role="option"
+                aria-selected={i === idx}
                 className={"pal-i" + (i === idx ? " sel" : "")}
                 onMouseMove={() => i !== idx && setIdx(i)}
                 onClick={() => pick(c)}

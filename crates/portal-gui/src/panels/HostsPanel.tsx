@@ -47,6 +47,24 @@ interface FormState {
   autoConnect: boolean; // sayfa açılınca otomatik shell aç
 }
 
+// Panel dışından "sunucu ekle"yi açan modül-düzeyi köprü (komut paleti kullanır).
+// Klavyeyle uçtan uca akışın ilk halkası bu: ⇧⇧ → "Add a server" → form açılır ve
+// ilk alan odağı alır; ekranın üstünden aşağı tab'lamaya gerek kalmaz.
+let addOpener: (() => void) | null = null;
+let pendingAdd = false;
+
+/** Hosts panelinde "sunucu ekle" formunu açar (panel açık değilse bir sonraki
+ *  mount'ta açılır — çağıran önce `showSide("hosts")` demeli). */
+export function openAddHost(): void {
+  // Panel zaten ayaktaysa doğrudan aç ve BEKLEYEN İSTEK BIRAKMA: bırakılırsa
+  // panel bir dahaki mount'unda form kendiliğinden açılırdı.
+  if (addOpener) {
+    addOpener();
+    return;
+  }
+  pendingAdd = true;
+}
+
 const emptyForm = (): FormState => ({
   id: null,
   username: "",
@@ -94,6 +112,19 @@ export function HostsPanel() {
     setErr(null);
     setForm(emptyForm());
   };
+
+  // Köprüyü kur. Panel komuttan SONRA mount olduysa (sol sütun kapalıydı)
+  // bekleyen istek burada karşılanır.
+  useEffect(() => {
+    addOpener = openAdd;
+    if (pendingAdd) {
+      pendingAdd = false;
+      openAdd();
+    }
+    return () => {
+      addOpener = null;
+    };
+  }, []);
   const openEdit = (h: Host) => {
     setErr(null);
     const login = (h.username ?? "").trim();
@@ -150,6 +181,9 @@ export function HostsPanel() {
       if ((e.key !== "e" && e.key !== "E") || e.ctrlKey || e.metaKey || e.altKey) return;
       const t = e.target as HTMLElement | null;
       if (t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.isContentEditable)) return;
+      // Bir modal açıkken tek harflik kısayol çalışmaz: kullanıcı diyalogdaki bir
+      // düğmeye odaklıyken "e"ye basınca arkada düzenleme formu açılıyordu.
+      if (document.querySelector(".overlay")) return;
       const h = hosts.find((x) => x.id === selectedHost);
       if (h) {
         e.preventDefault();
@@ -333,7 +367,7 @@ export function HostsPanel() {
                 <b>~/.ssh/config</b> later. Everything stays encrypted on this machine.
               </>
             ) : (
-              "No match."
+              "No server matches that search. Clear the box above to see them all."
             )}
           </div>
         ) : (
@@ -409,6 +443,7 @@ export function HostsPanel() {
                   <button
                     className="hostrow-edit"
                     title="Edit (E)"
+                    aria-label={`Edit ${displayName(h)}`}
                     onClick={(e) => {
                       e.stopPropagation();
                       openEdit(h);
@@ -419,6 +454,7 @@ export function HostsPanel() {
                   <button
                     className="hostdel"
                     title="Remove"
+                    aria-label={`Remove ${displayName(h)}`}
                     onClick={(e) => {
                       e.stopPropagation();
                       void removeHost(h.id);

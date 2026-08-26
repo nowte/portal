@@ -44,7 +44,7 @@ impl AppState {
     fn lock(&self) -> Result<std::sync::MutexGuard<'_, Store>, String> {
         self.store
             .lock()
-            .map_err(|_| "internal state lock poisoned".to_string())
+            .map_err(|_| "Portal's internal state stopped responding. Restart Portal; your saved servers are safe.".to_string())
     }
 
     /// Host + kimlikten bir Endpoint çözer. `auth` verilirse önbelleğe alınır; yoksa
@@ -58,7 +58,7 @@ impl AppState {
             let store = self.lock()?;
             store
                 .host(host_id)
-                .ok_or("That server no longer exists.")?
+                .ok_or("That server is no longer in your vault — it may have been removed here or on another synced device. Refresh the Hosts list.")?
                 .clone()
         };
         // Kimlik üç yerden gelebilir, bu sırayla:
@@ -72,7 +72,7 @@ impl AppState {
                 let ac = to_auth(a)?;
                 self.cached_creds
                     .lock()
-                    .map_err(|_| "cred cache poisoned".to_string())?
+                    .map_err(|_| "Portal's internal state stopped responding. Restart Portal; your saved servers are safe.".to_string())?
                     .insert(host_id, ac.clone());
                 if remember {
                     let (key_path, secret) = match &ac {
@@ -91,7 +91,7 @@ impl AppState {
                 let cached = self
                     .cached_creds
                     .lock()
-                    .map_err(|_| "cred cache poisoned".to_string())?
+                    .map_err(|_| "Portal's internal state stopped responding. Restart Portal; your saved servers are safe.".to_string())?
                     .get(&host_id)
                     .cloned();
                 match cached {
@@ -111,7 +111,7 @@ impl AppState {
                         // vault'a inmeyelim.
                         self.cached_creds
                             .lock()
-                            .map_err(|_| "cred cache poisoned".to_string())?
+                            .map_err(|_| "Portal's internal state stopped responding. Restart Portal; your saved servers are safe.".to_string())?
                             .insert(host_id, ac.clone());
                         ac
                     }
@@ -131,7 +131,7 @@ impl AppState {
         let mut reg = self
             .registry
             .lock()
-            .map_err(|_| "registry poisoned".to_string())?;
+            .map_err(|_| "Portal's internal state stopped responding. Restart Portal; your saved servers are safe.".to_string())?;
         let id = reg.next_id;
         reg.next_id += 1;
         let (tx, rx) = mpsc::channel();
@@ -151,7 +151,7 @@ impl AppState {
         let reg = self
             .registry
             .lock()
-            .map_err(|_| "registry poisoned".to_string())?;
+            .map_err(|_| "Portal's internal state stopped responding. Restart Portal; your saved servers are safe.".to_string())?;
         if let Some(h) = reg.sessions.get(&id) {
             let _ = h.cmd_tx.send(cmd);
         }
@@ -164,7 +164,7 @@ impl AppState {
         let mut reg = self
             .registry
             .lock()
-            .map_err(|_| "registry poisoned".to_string())?;
+            .map_err(|_| "Portal's internal state stopped responding. Restart Portal; your saved servers are safe.".to_string())?;
         for (_, h) in reg.sessions.drain() {
             let _ = h.cmd_tx.send(GuiCmd::Close);
         }
@@ -178,7 +178,7 @@ impl AppState {
         self.close_all_sessions()?;
         self.cached_creds
             .lock()
-            .map_err(|_| "cred cache poisoned".to_string())?
+            .map_err(|_| "Portal's internal state stopped responding. Restart Portal; your saved servers are safe.".to_string())?
             .clear();
         let fresh = Store::load().map_err(|e| e.to_string())?;
         let monitors = fresh.monitors().to_vec();
@@ -422,7 +422,7 @@ fn list_sessions(state: State<'_, AppState>) -> Result<Vec<SessionInfo>, String>
     let reg = state
         .registry
         .lock()
-        .map_err(|_| "registry poisoned".to_string())?;
+        .map_err(|_| "Portal's internal state stopped responding. Restart Portal; your saved servers are safe.".to_string())?;
     Ok(reg
         .sessions
         .iter()
@@ -441,7 +441,7 @@ fn forget_creds(state: State<'_, AppState>, host_id: HostId) -> Result<(), Strin
     state
         .cached_creds
         .lock()
-        .map_err(|_| "cred cache poisoned".to_string())?
+        .map_err(|_| "Portal's internal state stopped responding. Restart Portal; your saved servers are safe.".to_string())?
         .remove(&host_id);
     // Saklanmış sır da gitsin: "unut" dediğinde vault'ta kalırsa bir sonraki
     // bağlanmada yine sessizce kullanılır ve kullanıcı unuttuğunu sanır.
@@ -513,7 +513,7 @@ fn update_host(
     }
     let updated = {
         let mut s = state.lock()?;
-        let mut host = s.host(id).ok_or("That server no longer exists.")?.clone();
+        let mut host = s.host(id).ok_or("That server is no longer in your vault — it may have been removed here or on another synced device. Refresh the Hosts list.")?.clone();
         host.label = label.to_string();
         host.address = address.to_string();
         host.port = port.unwrap_or(portal_core::DEFAULT_SSH_PORT);
@@ -537,7 +537,7 @@ fn set_host_auto_connect(
 ) -> Result<Host, String> {
     let updated = {
         let mut s = state.lock()?;
-        let mut host = s.host(id).ok_or("That server no longer exists.")?.clone();
+        let mut host = s.host(id).ok_or("That server is no longer in your vault — it may have been removed here or on another synced device. Refresh the Hosts list.")?.clone();
         host.auto_connect = value;
         s.update_host(host.clone()).map_err(|e| e.to_string())?;
         host
@@ -672,7 +672,7 @@ fn switch_profile(state: State<'_, AppState>, id: ProfileId) -> Result<Bootstrap
             return Ok(bootstrap_of(&s));
         }
         if !s.profiles().iter().any(|p| p.id == id) {
-            return Err("That profile no longer exists.".to_string());
+            return Err("That profile is no longer in Portal's data folder. Pick another profile, or create a new one in Settings.".to_string());
         }
         let mut config: Config = s.config().clone();
         config.active_profile = Some(id);
@@ -845,7 +845,7 @@ fn close_session(state: State<'_, AppState>, id: u64) -> Result<(), String> {
         let mut reg = state
             .registry
             .lock()
-            .map_err(|_| "registry poisoned".to_string())?;
+            .map_err(|_| "Portal's internal state stopped responding. Restart Portal; your saved servers are safe.".to_string())?;
         reg.sessions.remove(&id)
     };
     if let Some(h) = handle {
@@ -1001,7 +1001,7 @@ fn list_monitors(state: State<'_, AppState>) -> Result<Vec<MonitorSummary>, Stri
     let log = state
         .uptime_log
         .lock()
-        .map_err(|_| "uptime log lock poisoned".to_string())?;
+        .map_err(|_| "Portal's internal state stopped responding. Restart Portal; your saved servers are safe.".to_string())?;
     let now = now_unix();
     let today = now / 86_400;
 
@@ -1158,7 +1158,7 @@ fn remove_monitor(app: AppHandle, state: State<'_, AppState>, id: MonitorId) -> 
         let mut log = state
             .uptime_log
             .lock()
-            .map_err(|_| "uptime log lock poisoned".to_string())?;
+            .map_err(|_| "Portal's internal state stopped responding. Restart Portal; your saved servers are safe.".to_string())?;
         log.retain_only(&keep);
         let _ = log.save(&state.uptime_file);
     }
@@ -1173,7 +1173,7 @@ fn check_monitor_now(state: State<'_, AppState>, id: MonitorId) -> Result<(), St
     state
         .uptime
         .lock()
-        .map_err(|_| "uptime service lock poisoned".to_string())?
+        .map_err(|_| "Portal's internal state stopped responding. Restart Portal; your saved servers are safe.".to_string())?
         .check_now(id);
     Ok(())
 }

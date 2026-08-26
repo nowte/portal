@@ -68,22 +68,35 @@ export function MonitorPanel({
 
   useEffect(() => setGuideTopic("monitor"), []);
 
+  // Bağlanma denemesi sayacı — iptal edilen bir deneme geri döndüğünde kendi
+  // oturumunu kapatır ve ekranı ezmez. Bkz. TerminalPanel (aynı desen).
+  const genRef = useRef(0);
+
   const connect = useCallback(async () => {
     if (!host) return;
     setPhase("connecting");
+    setMessage("");
+    const gen = ++genRef.current;
+    const stale = () => gen !== genRef.current;
     const cached = await hostIsCached(hostId);
+    if (stale()) return;
     let auth;
     if (!cached) {
       const a = await requestAuth(host);
+      if (stale()) return;
       if (!a) {
         setPhase("error");
-        setMessage("Connect cancelled.");
+        setMessage("Cancelled — nothing was sent to the server. Press Retry when you're ready.");
         return;
       }
       auth = a;
     }
     try {
       const id = await connectMonitor(hostId, auth);
+      if (stale()) {
+        void closeSession(id);
+        return;
+      }
       sessionRef.current = id;
       reportConn(id, hostId, "monitor", "connecting", paneId);
       unlistenRef.current = await onMetrics(id, (msg) => {
@@ -111,6 +124,7 @@ export function MonitorPanel({
         }
       });
     } catch (e) {
+      if (stale()) return;
       setPhase("error");
       setMessage(String(e));
     }
@@ -147,13 +161,34 @@ export function MonitorPanel({
     void connect();
   };
 
+  // Bağlanmayı yarıda kes; çekirdek el sıkışmayı da keser (ssh.rs Cancel).
+  const cancelConnect = () => {
+    genRef.current++;
+    if (unlistenRef.current) {
+      unlistenRef.current();
+      unlistenRef.current = null;
+    }
+    const id = sessionRef.current;
+    if (id != null) {
+      void closeSession(id);
+      dropConn(id);
+    }
+    sessionRef.current = null;
+    setPhase("idle");
+    // İptal edilen bir bağlanma "düzen geri yüklendi" DEĞİLDİR: idle kartı
+    // kullanıcının az önce yaptığı şeyi anlatsın.
+    setMessage("Cancelled before the server answered.");
+  };
+
   const decide = (accept: boolean) => {
     const id = sessionRef.current;
     setHostKey(null);
     if (id != null) void hostKeyDecision(id, accept);
     if (!accept) {
       setPhase("error");
-      setMessage("Host key rejected.");
+      setMessage(
+        "You didn't trust this server's key, so Portal stopped before signing in. Retry to see the fingerprint again.",
+      );
     }
   };
 
@@ -164,7 +199,7 @@ export function MonitorPanel({
           <div className="pane-idle">
             <div className="pane-idle-t">Monitor is ready when you are</div>
             <div className="pane-idle-s">
-              Portal restored this panel's position but didn't reconnect on its own.
+              {message || "Portal restored this panel's position but didn't reconnect on its own."}
             </div>
             <button className="btn-primary" onClick={() => void connect()}>
               <span>Connect</span>
@@ -172,9 +207,16 @@ export function MonitorPanel({
           </div>
         )}
         {phase === "connecting" && (
-          <div className="mon-status">
-            <span className="st" />
-            Connecting to {host?.label}…
+          /* Bağlanırken de bir çıkış var (P11): ulaşılamayan host'un zaman
+             aşımını beklemek zorunda değilsin. */
+          <div className="err-retry">
+            <div className="mon-status">
+              <span className="st" />
+              Connecting to {host?.label}…
+            </div>
+            <button className="btn-ghost" onClick={cancelConnect}>
+              Cancel
+            </button>
           </div>
         )}
         {phase === "error" && (

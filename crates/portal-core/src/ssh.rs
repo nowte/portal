@@ -139,6 +139,7 @@ enum SessionInput {
 pub struct SshSession {
     input_tx: tokio_mpsc::UnboundedSender<SessionInput>,
     event_rx: std_mpsc::Receiver<SshEvent>,
+    cancel: Cancel,
 }
 
 impl SshSession {
@@ -158,8 +159,9 @@ impl SshSession {
         let _ = self.input_tx.send(SessionInput::Resize { cols, rows });
     }
 
-    /// Oturumu kapatır.
+    /// Oturumu kapatır. Henüz bağlanmadıysa el sıkışmayı da keser.
     pub fn close(&self) {
+        self.cancel.fire();
         let _ = self.input_tx.send(SessionInput::Close);
     }
 }
@@ -194,12 +196,18 @@ impl SshRuntime {
         let (event_tx, event_rx) = std_mpsc::channel();
         let (input_tx, input_rx) = tokio_mpsc::unbounded_channel();
         let task_tx = event_tx.clone();
+        let cancel = Cancel::default();
+        let task_cancel = cancel.clone();
         self.rt.spawn(async move {
-            if let Err(err) = run_session(params, task_tx.clone(), input_rx).await {
+            if let Err(err) = run_session(params, task_tx.clone(), input_rx, task_cancel).await {
                 let _ = task_tx.send(SshEvent::Error(err));
             }
         });
-        SshSession { input_tx, event_rx }
+        SshSession {
+            input_tx,
+            event_rx,
+            cancel,
+        }
     }
 
     /// Runtime tanıtıcısı (diğer oturum türleri task spawn'lamak için).
@@ -360,6 +368,49 @@ pub(crate) struct Established {
     pub _jump: Option<client::Handle<ClientHandler>>,
 }
 
+/// Bağlanma sırasında el sıkışmayı yarıda kesen iptal bileti.
+///
+/// Oturum kapatma komutu normalde komut kanalından gelir, ama bağlanma bitene kadar
+/// o kanal HENÜZ OKUNMUYOR: thread TCP/auth bekliyor. Windows'ta ulaşılamayan bir
+/// host ~21 sn, bir jump host arkasında 120 sn'ye kadar sürer — kullanıcı o süre
+/// boyunca beklemeye mahkum kalırdı. İptal bu yüzden ayrı bir kanaldan gelir.
+#[derive(Clone, Default)]
+pub(crate) struct Cancel(Arc<tokio::sync::Notify>);
+
+impl Cancel {
+    /// İptali tetikler.
+    pub(crate) fn fire(&self) {
+        // `notify_one` izni SAKLAR: iptal beklemeye başlanmadan önce gelse de yakalanır.
+        self.0.notify_one();
+    }
+
+    /// İptal gelene kadar bekler.
+    async fn wait(&self) {
+        self.0.notified().await;
+    }
+}
+
+/// [`establish`] — ama kullanıcı iptal ederse el sıkışmayı beklemeden `None` döner.
+/// shell/sftp/metrics üçü de bunu kullanır: iptal tek yerde tanımlı.
+pub(crate) async fn establish_or_cancel(
+    endpoint: &Endpoint,
+    on_unknown_key: HostKeySink,
+    cancel: &Cancel,
+) -> Result<Option<Established>, String> {
+    tokio::select! {
+        r = establish(
+            &endpoint.host,
+            endpoint.port,
+            &endpoint.username,
+            &endpoint.auth,
+            &endpoint.known_hosts_path,
+            on_unknown_key,
+            endpoint.jump.as_ref(),
+        ) => r.map(Some),
+        () = cancel.wait() => Ok(None),
+    }
+}
+
 /// Bağlanır (host-key + kimlik doğrulama) ve hazır bir bağlantı döndürür. `jump`
 /// verilirse önce bastion'a bağlanır, oradan hedefe `direct-tcpip` açar ve o akış
 /// üzerinden ikinci bir SSH el sıkışması yapar (ProxyJump). shell/sftp/metrics/tünel
@@ -481,7 +532,7 @@ async fn authenticate(
         AuthChoice::Password(pw) => handle
             .authenticate_password(username, pw.clone())
             .await
-            .map_err(|e| format!("Authentication error: {e}"))?
+            .map_err(|e| format!("The server refused the sign-in attempt: {e}. Check the username, and the password or key file you picked."))?
             .success(),
         AuthChoice::KeyFile { path, passphrase } => {
             let resolved = expand_home(path);
@@ -491,7 +542,7 @@ async fn authenticate(
             handle
                 .authenticate_publickey(username, key)
                 .await
-                .map_err(|e| format!("Authentication error: {e}"))?
+                .map_err(|e| format!("The server refused the sign-in attempt: {e}. Check the username, and the password or key file you picked."))?
                 .success()
         }
     };
@@ -510,7 +561,7 @@ pub(crate) async fn exec_collect(
     let channel = handle
         .channel_open_session()
         .await
-        .map_err(|e| format!("Couldn't open channel: {e}"))?;
+        .map_err(|e| format!("Signed in, but the server wouldn't open a session channel: {e}. It may be out of sessions or restricted by sshd config — try again, or check the server's MaxSessions."))?;
     channel
         .exec(true, command)
         .await
@@ -534,6 +585,7 @@ async fn run_session(
     params: ConnectParams,
     event_tx: std_mpsc::Sender<SshEvent>,
     mut input_rx: tokio_mpsc::UnboundedReceiver<SessionInput>,
+    cancel: Cancel,
 ) -> Result<(), String> {
     // Host-key olayını bu oturumun akışına yönlendir.
     let hk_tx = event_tx.clone();
@@ -541,22 +593,18 @@ async fn run_session(
         let _ = hk_tx.send(SshEvent::HostKey(info, responder));
     });
 
-    let Established { handle, _jump } = establish(
-        &params.endpoint.host,
-        params.endpoint.port,
-        &params.endpoint.username,
-        &params.endpoint.auth,
-        &params.endpoint.known_hosts_path,
-        on_unknown_key,
-        params.endpoint.jump.as_ref(),
-    )
-    .await?;
+    // İptal edildiyse sessizce biter: kullanıcı zaten vazgeçti, hata göstermeyiz.
+    let Some(Established { handle, _jump }) =
+        establish_or_cancel(&params.endpoint, on_unknown_key, &cancel).await?
+    else {
+        return Ok(());
+    };
 
     // Kanal + PTY + shell.
     let channel = handle
         .channel_open_session()
         .await
-        .map_err(|e| format!("Couldn't open channel: {e}"))?;
+        .map_err(|e| format!("Signed in, but the server wouldn't open a session channel: {e}. It may be out of sessions or restricted by sshd config — try again, or check the server's MaxSessions."))?;
     // Agent forwarding (yalnız güvenilen host): isteği shell'den önce yap.
     if params.endpoint.forward_agent {
         let _ = channel.agent_forward(true).await;
@@ -572,11 +620,11 @@ async fn run_session(
             &[],
         )
         .await
-        .map_err(|e| format!("PTY request failed: {e}"))?;
+        .map_err(|e| format!("The server refused to give this session a terminal: {e}. Accounts limited to SFTP-only usually can't open a shell — use the Files panel instead."))?;
     channel
         .request_shell(true)
         .await
-        .map_err(|e| format!("Shell request failed: {e}"))?;
+        .map_err(|e| format!("The server wouldn't start a shell for this account: {e}. Check that the account has a login shell (not /usr/sbin/nologin)."))?;
 
     let _ = event_tx.send(SshEvent::Connected);
 
@@ -703,5 +751,59 @@ mod tests {
             }
         }
         assert!(got_error, "kapalı porta bağlanınca Error beklenir");
+    }
+
+    /// Bağlanma SÜRERKEN `close()` çağrılırsa oturum el sıkışmayı beklemeden
+    /// biter. Dinleyici bağlantıyı kabul eder ama SSH sürüm satırını hiç
+    /// göndermez → el sıkışma asılı kalır (gerçek hayatta: erişilemeyen host,
+    /// Windows'ta ~21 sn). İptal çalışmazsa bu test zaman aşımına düşer.
+    #[test]
+    fn close_during_handshake_ends_the_session() {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let port = listener.local_addr().unwrap().port();
+        // Kabul edilen soketi tut: kapatılırsa el sıkışma kendiliğinden hata verir
+        // ve test iptali değil, kopmayı ölçerdi.
+        let held = std::thread::spawn(move || listener.accept().map(|(sock, _)| sock));
+
+        let rt = SshRuntime::new().unwrap();
+        let session = rt.connect(ConnectParams {
+            endpoint: Endpoint {
+                host: "127.0.0.1".to_string(),
+                port,
+                username: "nobody".to_string(),
+                auth: AuthChoice::Password("x".to_string()),
+                known_hosts_path: std::env::temp_dir().join("portal-test-known_hosts"),
+                jump: None,
+                forward_agent: false,
+            },
+            pty: PtySize { cols: 80, rows: 24 },
+        });
+
+        // El sıkışmanın gerçekten başlamasını bekle, sonra iptal et.
+        std::thread::sleep(Duration::from_millis(300));
+        session.close();
+
+        // Görev bitince olay göndericisi düşer → kanal kopar. Hata YAYILMAMALI:
+        // kullanıcı vazgeçti, ekrana kırmızı bir şey basmak yanlış olur.
+        let deadline = Instant::now() + Duration::from_secs(5);
+        let mut ended = false;
+        while Instant::now() < deadline {
+            match session.try_event() {
+                Some(SshEvent::Error(m)) => panic!("iptalde hata beklenmez: {m}"),
+                Some(_) => {}
+                None => {
+                    if matches!(
+                        session.event_rx.try_recv(),
+                        Err(std_mpsc::TryRecvError::Disconnected)
+                    ) {
+                        ended = true;
+                        break;
+                    }
+                    std::thread::sleep(Duration::from_millis(20));
+                }
+            }
+        }
+        drop(held);
+        assert!(ended, "close() el sıkışmayı kesmeli, oturum bitmeli");
     }
 }

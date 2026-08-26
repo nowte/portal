@@ -16,7 +16,9 @@ use russh_sftp::client::SftpSession as RawSftp;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::sync::mpsc as tokio_mpsc;
 
-use crate::ssh::{establish, Established, HostKeyInfo, HostKeyResponder, HostKeySink};
+use crate::ssh::{
+    establish_or_cancel, Cancel, Established, HostKeyInfo, HostKeyResponder, HostKeySink,
+};
 
 const CHUNK: usize = 32 * 1024;
 const PROGRESS_STEP: u64 = 128 * 1024;
@@ -141,6 +143,7 @@ enum SftpCommand {
 pub struct SftpSession {
     cmd_tx: tokio_mpsc::UnboundedSender<SftpCommand>,
     event_rx: std_mpsc::Receiver<SftpEvent>,
+    cancel: Cancel,
 }
 
 impl SftpSession {
@@ -200,8 +203,9 @@ impl SftpSession {
         let _ = self.cmd_tx.send(SftpCommand::RemoveDir(path));
     }
 
-    /// Oturumu kapatır.
+    /// Oturumu kapatır. Henüz bağlanmadıysa el sıkışmayı da keser.
     pub fn close(&self) {
+        self.cancel.fire();
         let _ = self.cmd_tx.send(SftpCommand::Close);
     }
 }
@@ -219,12 +223,18 @@ impl crate::ssh::SshRuntime {
         let (event_tx, event_rx) = std_mpsc::channel();
         let (cmd_tx, cmd_rx) = tokio_mpsc::unbounded_channel();
         let task_tx = event_tx.clone();
+        let cancel = Cancel::default();
+        let task_cancel = cancel.clone();
         self.handle().spawn(async move {
-            if let Err(err) = run_sftp(endpoint, task_tx.clone(), cmd_rx).await {
+            if let Err(err) = run_sftp(endpoint, task_tx.clone(), cmd_rx, task_cancel).await {
                 let _ = task_tx.send(SftpEvent::Error(err));
             }
         });
-        SftpSession { cmd_tx, event_rx }
+        SftpSession {
+            cmd_tx,
+            event_rx,
+            cancel,
+        }
     }
 }
 
@@ -232,22 +242,19 @@ async fn run_sftp(
     endpoint: crate::ssh::Endpoint,
     event_tx: std_mpsc::Sender<SftpEvent>,
     mut cmd_rx: tokio_mpsc::UnboundedReceiver<SftpCommand>,
+    cancel: Cancel,
 ) -> Result<(), String> {
     let hk_tx = event_tx.clone();
     let on_unknown_key: HostKeySink = Arc::new(move |info, responder| {
         let _ = hk_tx.send(SftpEvent::HostKey(info, responder));
     });
 
-    let Established { handle, _jump } = establish(
-        &endpoint.host,
-        endpoint.port,
-        &endpoint.username,
-        &endpoint.auth,
-        &endpoint.known_hosts_path,
-        on_unknown_key,
-        endpoint.jump.as_ref(),
-    )
-    .await?;
+    // İptal edildiyse sessizce biter: kullanıcı zaten vazgeçti, hata göstermeyiz.
+    let Some(Established { handle, _jump }) =
+        establish_or_cancel(&endpoint, on_unknown_key, &cancel).await?
+    else {
+        return Ok(());
+    };
 
     let sftp = open_sftp(&handle).await?;
     let _ = event_tx.send(SftpEvent::Ready);
@@ -446,7 +453,7 @@ async fn open_sftp(
     let channel = handle
         .channel_open_session()
         .await
-        .map_err(|e| format!("Couldn't open channel: {e}"))?;
+        .map_err(|e| format!("Signed in, but the server wouldn't open a session channel: {e}. It may be out of sessions — try again in a moment."))?;
     channel
         .request_subsystem(true, "sftp")
         .await

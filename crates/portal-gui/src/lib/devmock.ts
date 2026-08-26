@@ -15,10 +15,6 @@
 interface TauriInternals {
   invoke: (cmd: string, args?: unknown) => Promise<unknown>;
   transformCallback: (cb: (v: unknown) => void, once?: boolean) => number;
-  // `listen()`in döndürdüğü unlisten fonksiyonu bunu çağırır. Taklit edilmezse
-  // olay dinleyen HER bileşen unmount olurken yakalanmamış bir promise hatası
-  // atar (tarayıcı konsolu bunlarla dolar ve gerçek hatalar kaybolur).
-  unregisterListener: (event: string, id: number) => void;
   metadata: { currentWindow: { label: string }; currentWebview: { label: string } };
 }
 
@@ -190,9 +186,14 @@ export function installDevMock(): void {
       return Promise.resolve(RESULTS[cmd] ?? null);
     },
     transformCallback: () => 0,
-    unregisterListener: () => undefined,
     metadata: { currentWindow: { label: "main" }, currentWebview: { label: "main" } },
   };
+  // ⚠️ `unlisten()` bunu AYRI bir global'den okur (@tauri-apps/api/event.js),
+  // `__TAURI_INTERNALS__`ten değil — tipi Tauri'nin kendi bildiriminden gelir.
+  // Yanlış yere konduğu sürece olay dinleyen HER bileşen unmount olurken
+  // yakalanmamış bir promise hatası atıyor, konsol bunlarla dolup gerçek
+  // hataları gizliyordu.
+  window.__TAURI_EVENT_PLUGIN_INTERNALS__ = { unregisterListener: () => undefined };
   // eslint-disable-next-line no-console
   console.info("[portal] browser preview — Tauri bridge mocked, no real data");
 }

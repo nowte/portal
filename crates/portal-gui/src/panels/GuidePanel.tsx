@@ -8,7 +8,59 @@ import { pinGuideTopic, useGuideTopic, type GuideTopic } from "../lib/guide";
 interface Topic {
   title: string;
   blocks: { q: string; a: ReactNode }[];
+  /** Kısayol haritası (yalnız "keys" konusunda). */
+  keys?: { group: string; rows: { k: string[]; d: string }[] }[];
 }
+
+// Kısayol haritası. Her satır KODDAN doğrulandı — ezberden yazılmadı:
+// App.tsx (Ctrl+K/B/F) · CommandPalette.tsx (⇧⇧, ok tuşları) · HostsPanel.tsx (E,
+// satırda Enter/Space) · TerminalPanel.tsx (attachCustomKeyEventHandler + arama
+// şeridi) · EditorPanel.tsx (Ctrl+S) · FilesPanel.tsx (yol kutusu, filtre).
+// Yeni bir kısayol bağlarken buraya da bir satır ekle; tek liste burasıdır.
+const KEYMAP: NonNullable<Topic["keys"]> = [
+  {
+    group: "Anywhere",
+    rows: [
+      { k: ["Shift", "Shift"], d: "Command palette — jump to any server or action" },
+      { k: ["Ctrl", "F"], d: "Find a server (inside a terminal this searches its output instead)" },
+      { k: ["Ctrl", "B"], d: "Show or hide the left column" },
+      { k: ["Ctrl", "K"], d: "Reset the window layout to its default" },
+      { k: ["Esc"], d: "Close whatever is on top — dialog, palette, menu" },
+    ],
+  },
+  {
+    group: "Command palette",
+    rows: [
+      { k: ["↑ ↓"], d: "Move through the results" },
+      { k: ["Enter"], d: "Run the selected command" },
+    ],
+  },
+  {
+    group: "Hosts",
+    rows: [
+      { k: ["Enter"], d: "Open the focused server's page" },
+      { k: ["E"], d: "Edit the selected server (not while you're typing in a box)" },
+    ],
+  },
+  {
+    group: "Terminal",
+    rows: [
+      { k: ["Ctrl", "F"], d: "Find in the output" },
+      { k: ["Enter"], d: "Next match · Shift+Enter for the previous one" },
+      { k: ["Ctrl", "+"], d: "Bigger text (applies to every terminal, and is remembered)" },
+      { k: ["Ctrl", "−"], d: "Smaller text" },
+      { k: ["Ctrl", "0"], d: "Back to the default size" },
+    ],
+  },
+  {
+    group: "Files",
+    rows: [
+      { k: ["Enter"], d: "Go to the folder you typed in the path box" },
+      { k: ["Esc"], d: "Close the filter box" },
+      { k: ["Ctrl", "S"], d: "Save the file you're editing back to the server" },
+    ],
+  },
+];
 
 const GUIDE: Record<GuideTopic, Topic> = {
   home: {
@@ -126,6 +178,22 @@ const GUIDE: Record<GuideTopic, Topic> = {
       },
     ],
   },
+  keys: {
+    title: "Keyboard",
+    blocks: [
+      {
+        q: "What is this?",
+        a: (
+          <>
+            Every shortcut Portal listens for. You can add a server and connect to it without
+            touching the mouse — tab to the <span className="mono">Hosts</span> icon on the
+            left, press <span className="mono">Enter</span>, and keep going.
+          </>
+        ),
+      },
+    ],
+    keys: KEYMAP,
+  },
 };
 
 export function GuidePanel() {
@@ -149,6 +217,26 @@ export function GuidePanel() {
             <div className="blk" key={i}>
               <p className="q">{b.q}</p>
               <p className="a">{b.a}</p>
+            </div>
+          ))}
+          {g.keys?.map((grp) => (
+            <div className="blk" key={grp.group}>
+              <p className="q">{grp.group}</p>
+              <dl className="keymap">
+                {grp.rows.map((r) => (
+                  <div className="keyrow" key={r.d}>
+                    <dt>
+                      {r.k.map((k, i) => (
+                        <span key={i}>
+                          {i > 0 && <span className="keyplus">+</span>}
+                          <kbd>{k}</kbd>
+                        </span>
+                      ))}
+                    </dt>
+                    <dd>{r.d}</dd>
+                  </div>
+                ))}
+              </dl>
             </div>
           ))}
         </div>

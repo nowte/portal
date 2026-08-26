@@ -345,6 +345,7 @@ export function UptimePanel() {
                   <button
                     className="hostrow-edit"
                     title="Edit monitor"
+                    aria-label={`Edit the monitor for ${m.monitor.label}`}
                     onClick={(e) => {
                       e.stopPropagation();
                       setErr(null);
@@ -356,6 +357,7 @@ export function UptimePanel() {
                   <button
                     className="hostdel"
                     title="Remove monitor"
+                    aria-label={`Remove the monitor for ${m.monitor.label}`}
                     onClick={(e) => {
                       e.stopPropagation();
                       void removeMonitor(m.monitor.id).then(refresh);

@@ -37,22 +37,22 @@ const SALT_LEN: usize = 16;
 #[non_exhaustive]
 pub enum CryptoError {
     /// Şifre çözme başarısız: yanlış parola/anahtar ya da bozuk dosya.
-    #[error("wrong password or corrupted vault")]
+    #[error("That password didn't open the vault. Check the password — or, if it was right, this vault file may be damaged; restore vault.portal.bak from Portal's data folder.")]
     Decrypt,
     /// Şifreleme başarısız (beklenmez).
-    #[error("could not encrypt vault")]
+    #[error("Portal couldn't encrypt the vault, so nothing was saved. Try the change again; if it keeps failing, restart Portal.")]
     Encrypt,
     /// Anahtar türetme (Argon2id) başarısız.
-    #[error("key derivation failed")]
+    #[error("Portal couldn't derive the vault key from your password. Close other heavy applications (this step needs memory) and try again.")]
     Kdf,
     /// Güvenli rastgelelik kaynağı yok.
-    #[error("secure random source unavailable")]
+    #[error("This machine's secure random source is unavailable, so Portal refused to create weak keys. Restart the machine and try again.")]
     Rng,
     /// Dosya tanınan bir Portal vault'u değil (bozuk/eski format).
-    #[error("vault file is not a recognized Portal vault")]
+    #[error("That file isn't a Portal vault. Point Portal at the vault.portal file it created, not another file in the folder.")]
     Format,
     /// Bu vault'u açacak eşleşen bir anahtar sarımı yok.
-    #[error("no matching key to unlock this vault")]
+    #[error("None of this machine's saved keys open that vault. Unlock it with the profile password, or with your recovery phrase.")]
     NoMatchingKey,
 }
 

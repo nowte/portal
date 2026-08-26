@@ -3,10 +3,11 @@
 //
 // requestAuth(host) → Promise<Auth | null>. null = kullanıcı iptal etti.
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Check, KeyRound, Lock, X } from "lucide-react";
 import type { Auth, Host } from "../lib/types";
 import { usePortal } from "../context";
+import { useModal } from "../lib/modal";
 
 let resolver: ((a: Auth | null) => void) | null = null;
 let opener: ((host: Host) => void) | null = null;
@@ -35,6 +36,7 @@ export function AuthDialog() {
   const [path, setPath] = useState("");
   const [passphrase, setPassphrase] = useState("");
   const [remember, setRemember] = useState(false);
+  const boxRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     opener = (h) => {
@@ -57,15 +59,8 @@ export function AuthDialog() {
     r?.(a);
   };
 
-  useEffect(() => {
-    if (!host) return;
-    const onEsc = (e: KeyboardEvent) => {
-      if (e.key === "Escape") finish(null);
-    };
-    window.addEventListener("keydown", onEsc);
-    return () => window.removeEventListener("keydown", onEsc);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [host]);
+  // Esc + odak tuzağı + odak iadesi: lib/modal.ts (tek kaynak).
+  useModal(boxRef, () => finish(null), host !== null);
 
   if (!host) return null;
 
@@ -79,7 +74,7 @@ export function AuthDialog() {
 
   return (
     <div className="overlay" onMouseDown={(e) => e.target === e.currentTarget && finish(null)}>
-      <div className="dialog" role="dialog" aria-label="Connect">
+      <div ref={boxRef} tabIndex={-1} className="dialog" role="dialog" aria-modal="true" aria-label="Connect">
         <div className="dlg-head">
           <span className="dlg-title">Connect to {host.label}</span>
           <button className="dlg-x" aria-label="Cancel" onClick={() => finish(null)}>

@@ -172,16 +172,21 @@ async fn run_system(
         let _ = hk_tx.send(SystemEvent::HostKey(info, responder));
     });
 
-    let Established { handle, _jump } = establish(
-        &endpoint.host,
-        endpoint.port,
-        &endpoint.username,
-        &endpoint.auth,
-        &endpoint.known_hosts_path,
-        on_unknown_key,
-        endpoint.jump.as_ref(),
-    )
-    .await?;
+    // Bağlanma sırasında oturum kapatılırsa el sıkışmayı bekleme: `stop_rx` ya bir
+    // dur mesajı alır ya da (SystemSession drop edilince) kapanır. İkisi de iptaldir;
+    // kullanıcı vazgeçtiği için hata göstermeyiz.
+    let Established { handle, _jump } = tokio::select! {
+        r = establish(
+            &endpoint.host,
+            endpoint.port,
+            &endpoint.username,
+            &endpoint.auth,
+            &endpoint.known_hosts_path,
+            on_unknown_key,
+            endpoint.jump.as_ref(),
+        ) => r?,
+        _ = stop_rx.recv() => return Ok(()),
+    };
 
     loop {
         match exec_collect(&handle, SYSTEM_CMD).await {

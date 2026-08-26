@@ -5,7 +5,9 @@
 
 import { useSyncExternalStore } from "react";
 
-export type GuideTopic = "home" | "gateway" | "terminal" | "files" | "monitor";
+// "keys" bir PANELE karşılık gelmez: kısayol haritası yalnız rail'in kendi
+// seçicisinden (ya da komut paletinden) açılır, takip onu kendiliğinden seçmez.
+export type GuideTopic = "home" | "gateway" | "terminal" | "files" | "monitor" | "keys";
 
 let topic: GuideTopic = "home";
 const listeners = new Set<() => void>();

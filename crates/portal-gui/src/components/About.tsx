@@ -9,10 +9,11 @@
 //
 // Modül-düzeyi köprü (prop-drilling'siz): openAbout("about" | "support").
 
-import { useEffect, useState, useSyncExternalStore } from "react";
+import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { Check, Copy, X } from "lucide-react";
 import { usePortal } from "../context";
 import { APP_VERSION } from "../lib/version";
+import { useModal } from "../lib/modal";
 
 export type AboutTab = "about" | "support";
 
@@ -62,20 +63,24 @@ export function About() {
     () => open,
   );
   const { boot } = usePortal();
+  const boxRef = useRef<HTMLDivElement>(null);
 
-  useEffect(() => {
-    if (!tab) return;
-    const onEsc = (e: KeyboardEvent) => e.key === "Escape" && close();
-    window.addEventListener("keydown", onEsc);
-    return () => window.removeEventListener("keydown", onEsc);
-  }, [tab]);
+  // Esc + odak tuzağı + odak iadesi: lib/modal.ts (tek kaynak).
+  useModal(boxRef, close, tab !== null);
 
   if (!tab) return null;
   const support = tab === "support";
 
   return (
     <div className="overlay" onMouseDown={(e) => e.target === e.currentTarget && close()}>
-      <div className="dialog" role="dialog" aria-label={support ? "Support" : "About Portal"}>
+      <div
+        ref={boxRef}
+        tabIndex={-1}
+        className="dialog"
+        role="dialog"
+        aria-modal="true"
+        aria-label={support ? "Support" : "About Portal"}
+      >
         <div className="dlg-head">
           <span className="dlg-title">{support ? "Support" : "About Portal"}</span>
           <button className="dlg-x" aria-label="Close" onClick={close}>
