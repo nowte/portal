@@ -43,6 +43,19 @@ pub struct CheckResult {
     /// Başarısızlık nedeni (kullanıcıya gösterilir).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub error: Option<String>,
+    /// TLS sertifikasının bitiş anı (unix saniye) — yalnız ayakta olan https
+    /// hedeflerde okunur. Eski kayıtlarda yok → `None`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cert_expires_at: Option<u64>,
+}
+
+impl CheckResult {
+    /// Sertifikanın bitişine kalan gün; sertifika okunmadıysa `None`.
+    #[must_use]
+    pub fn cert_days_left(&self, now: u64) -> Option<i64> {
+        self.cert_expires_at
+            .map(|expires_at| crate::cert::days_left(expires_at, now))
+    }
 }
 
 /// Bir günün özeti (ham kontroller ring'den düşse de kalır).
@@ -128,6 +141,13 @@ impl MonitorHistory {
     #[must_use]
     pub fn last(&self) -> Option<&CheckResult> {
         self.recent.last()
+    }
+
+    /// En son OKUNABİLEN sertifika bitişi. Son kontrolde bakılmaz: hedef
+    /// düştüğünde sertifika uyarısı da kaybolurdu, oysa bilgi hâlâ geçerli.
+    #[must_use]
+    pub fn cert_expires_at(&self) -> Option<u64> {
+        self.recent.iter().rev().find_map(|c| c.cert_expires_at)
     }
 }
 
@@ -236,6 +256,7 @@ mod tests {
             latency_ms: up.then_some(100),
             status: up.then_some(200),
             error: (!up).then(|| "connection refused".to_string()),
+            cert_expires_at: None,
         }
     }
 
@@ -259,6 +280,24 @@ mod tests {
         // Toparlandı.
         history.recent.push(result(id, 4, true));
         assert_eq!(history.state(), MonitorState::Up);
+    }
+
+    #[test]
+    fn cert_expiry_survives_an_outage() {
+        let id = MonitorId::new();
+        let mut history = MonitorHistory::default();
+        let mut ok = result(id, 1, true);
+        ok.cert_expires_at = Some(2_000_000_000);
+        history.recent.push(ok);
+        // Hedef düştü: bu kontrolde sertifika okunmadı, ama bilgi kaybolmamalı.
+        history.recent.push(result(id, 2, false));
+
+        assert_eq!(history.cert_expires_at(), Some(2_000_000_000));
+        assert_eq!(
+            history.recent[0].cert_days_left(2_000_000_000 - 10 * 86_400),
+            Some(10)
+        );
+        assert_eq!(history.recent[1].cert_days_left(1), None);
     }
 
     #[test]

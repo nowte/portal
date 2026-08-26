@@ -35,6 +35,8 @@ export interface Bootstrap {
   can_remember: boolean;
   // Terminal yazı boyutu (px) — uygulama geneli, Ctrl +/- ile değişir.
   terminal_font_size: number;
+  // Monitör düşüp kalkınca masaüstü bildirimi gönderilsin mi.
+  notify_uptime: boolean;
   hosts: Host[];
   folders: Folder[];
 }
@@ -48,7 +50,7 @@ export interface Snippet {
 
 // ── Uptime monitörü ────────────────────────────────────
 export type MonitorTarget =
-  | { kind: "http"; url: string; expect_status?: number | null }
+  | { kind: "http"; url: string; expect_status?: number | null; contains?: string | null }
   | { kind: "tcp"; host: string; port: number };
 
 export interface Monitor {
@@ -69,6 +71,8 @@ export interface CheckResult {
   latency_ms?: number | null;
   status?: number | null;
   error?: string | null;
+  // TLS sertifikasının bitiş anı (unix saniye) — yalnız ayakta olan https hedeflerde.
+  cert_expires_at?: number | null;
 }
 
 export interface DayStat {
@@ -88,6 +92,10 @@ export interface MonitorSummary {
   today: DayStat;
   days: DayStat[];
   recent: CheckResult[];
+  // Sertifikanın bitişine kalan gün (https değilse null).
+  certDays: number | null;
+  // Uyarı düzeyi — eşikler ÇEKİRDEKTE (portal_core::cert), burada yalnız çizilir.
+  certAlert: "warn" | "crit" | null;
 }
 
 // Form → Rust (monitor_from). Boş label hedeften türetilir.
@@ -97,6 +105,8 @@ export interface MonitorInput {
   target: string;
   port: number | null;
   expectStatus: number | null;
+  // Yanıt gövdesinde aranan metin (boşsa gövdeye bakılmaz).
+  contains: string | null;
   intervalSecs: number;
   timeoutSecs: number;
   enabled: boolean;

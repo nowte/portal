@@ -463,6 +463,21 @@ impl Store {
         self.config.save(&self.paths.config_file())
     }
 
+    /// Monitör düşüp kalkınca masaüstü bildirimi gönderilsin mi (varsayılan: evet).
+    #[must_use]
+    pub fn notify_uptime(&self) -> bool {
+        self.config.notify_uptime.unwrap_or(true)
+    }
+
+    /// Uptime bildirimlerini açar/kapatır ve config'i yazar.
+    ///
+    /// # Errors
+    /// Yazma başarısız olursa hata döner.
+    pub fn set_notify_uptime(&mut self, enabled: bool) -> Result<()> {
+        self.config.notify_uptime = Some(enabled);
+        self.config.save(&self.paths.config_file())
+    }
+
     /// Terminal yazı boyutu (px) — uygulama geneli.
     #[must_use]
     pub fn terminal_font_size(&self) -> u8 {
@@ -981,6 +996,7 @@ mod tests {
                     crate::model::MonitorTarget::Http {
                         url: "https://example.com".into(),
                         expect_status: None,
+                        contains: None,
                     },
                 ))
                 .unwrap();

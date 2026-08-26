@@ -7,7 +7,7 @@
 // Sinyal yoksa bölüm hiç render edilmez.
 
 import { useEffect, useMemo, useState } from "react";
-import { Activity, ArrowRight, Clock, CornerDownLeft, Database, FolderTree, Gauge, KeyRound, Lock, Server, Star, Terminal as TerminalIcon, TriangleAlert, Zap, type LucideIcon } from "lucide-react";
+import { Activity, ArrowRight, Clock, CornerDownLeft, Database, FolderTree, Gauge, KeyRound, Lock, Server, ShieldAlert, Star, Terminal as TerminalIcon, TriangleAlert, Zap, type LucideIcon } from "lucide-react";
 import { usePortal } from "../context";
 import { openFiles, openGateway, openMonitor, openTerminal, showSide } from "../dock/dock";
 import { openSettings } from "../components/Settings";
@@ -20,7 +20,7 @@ import {
   useFavorites,
   type ActivityKind,
 } from "../lib/local";
-import { downMonitors, targetText, useMonitors } from "../lib/uptime";
+import { certText, certWarnings, downMonitors, targetText, useMonitors } from "../lib/uptime";
 import type { Host } from "../lib/types";
 
 function hostTitle(h: Host): string {
@@ -181,6 +181,17 @@ export function HomePanel() {
         Icon: TriangleAlert,
         title: `${m.monitor.label} is down`,
         sub: m.last?.error ?? targetText(m),
+        action: "Open Uptime",
+        run: () => showSide("uptime"),
+      });
+    }
+    for (const m of certWarnings(monitors)) {
+      out.push({
+        id: `cert:${m.monitor.id}`,
+        severity: m.certAlert === "crit" ? "crit" : "warn",
+        Icon: ShieldAlert,
+        title: `${m.monitor.label} certificate ${certText(m.certDays ?? 0)}`,
+        sub: targetText(m),
         action: "Open Uptime",
         run: () => showSide("uptime"),
       });

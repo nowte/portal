@@ -370,6 +370,10 @@ pub enum MonitorTarget {
         /// Beklenen HTTP durum kodu; `None` = herhangi bir 2xx/3xx.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         expect_status: Option<u16>,
+        /// Yanıt gövdesinde aranan metin; bulunmazsa 200 dönse bile Down.
+        /// Eski vault'larda yok → `None` (varsayılan: gövdeye bakılmaz).
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        contains: Option<String>,
     },
     /// Ham TCP bağlantısı; port açılmıyorsa Down.
     Tcp {
@@ -535,10 +539,12 @@ mod tests {
             MonitorTarget::Http {
                 url: "https://example.com/health".into(),
                 expect_status: Some(204),
+                contains: Some("ok".into()),
             },
             MonitorTarget::Http {
                 url: "https://example.com".into(),
                 expect_status: None,
+                contains: None,
             },
             MonitorTarget::Tcp {
                 host: "203.0.113.10".into(),

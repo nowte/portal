@@ -252,6 +252,8 @@ struct Bootstrap {
     can_remember: bool,
     /// Terminal yazı boyutu (px) — uygulama geneli, Ctrl +/- ile değişir.
     terminal_font_size: u8,
+    /// Monitör düşüp kalkınca masaüstü bildirimi gönderilsin mi.
+    notify_uptime: bool,
     hosts: Vec<Host>,
     folders: Vec<Folder>,
 }
@@ -269,6 +271,7 @@ fn bootstrap_of(s: &Store) -> Bootstrap {
         minimize_to_tray: s.minimize_to_tray(),
         can_remember: s.vault_is_encrypted(),
         terminal_font_size: s.terminal_font_size(),
+        notify_uptime: s.notify_uptime(),
         hosts: s.hosts().to_vec(),
         folders: s.folders().to_vec(),
     }
@@ -970,6 +973,20 @@ struct MonitorSummary {
     days: Vec<DayStat>,
     /// Son kontroller, eskiden yeniye (sparkline + son olaylar).
     recent: Vec<CheckResult>,
+    /// TLS sertifikasının bitişine kalan gün (https olmayan hedefte `None`).
+    cert_days: Option<i64>,
+    /// Eşiği geçtiyse uyarı düzeyi: "warn" (30 gün) / "crit" (7 gün).
+    /// Eşikler ÇEKİRDEKTE — arayüz yalnız gelen düzeyi çizer.
+    cert_alert: Option<&'static str>,
+}
+
+/// Kalan güne göre uyarı düzeyi (eşikler `portal_core::cert`).
+fn cert_alert(days: Option<i64>) -> Option<&'static str> {
+    match days? {
+        d if d <= portal_core::CERT_CRIT_DAYS => Some("crit"),
+        d if d <= portal_core::CERT_WARN_DAYS => Some("warn"),
+        _ => None,
+    }
 }
 
 /// Panelde gösterilen gün sayısı.
@@ -985,7 +1002,8 @@ fn list_monitors(state: State<'_, AppState>) -> Result<Vec<MonitorSummary>, Stri
         .uptime_log
         .lock()
         .map_err(|_| "uptime log lock poisoned".to_string())?;
-    let today = now_unix() / 86_400;
+    let now = now_unix();
+    let today = now / 86_400;
 
     Ok(store
         .monitors()
@@ -994,6 +1012,9 @@ fn list_monitors(state: State<'_, AppState>) -> Result<Vec<MonitorSummary>, Stri
             let history = log.history(monitor.id);
             let days = history.map(|h| h.days.as_slice()).unwrap_or_default();
             let recent = history.map(|h| h.recent.as_slice()).unwrap_or_default();
+            let cert_days = history
+                .and_then(portal_core::MonitorHistory::cert_expires_at)
+                .map(|at| portal_core::cert::days_left(at, now));
             MonitorSummary {
                 monitor: monitor.clone(),
                 state: history
@@ -1010,6 +1031,8 @@ fn list_monitors(state: State<'_, AppState>) -> Result<Vec<MonitorSummary>, Stri
                     }),
                 days: days[days.len().saturating_sub(SUMMARY_DAYS)..].to_vec(),
                 recent: recent[recent.len().saturating_sub(SUMMARY_RECENT)..].to_vec(),
+                cert_days,
+                cert_alert: cert_alert(cert_days),
             }
         })
         .collect())
@@ -1028,6 +1051,8 @@ struct MonitorInput {
     port: Option<u16>,
     /// HTTP: beklenen durum kodu (boşsa herhangi bir 2xx/3xx).
     expect_status: Option<u16>,
+    /// HTTP: yanıt gövdesinde aranan metin (boşsa gövdeye bakılmaz).
+    contains: Option<String>,
     interval_secs: u32,
     timeout_secs: u32,
     enabled: bool,
@@ -1050,6 +1075,12 @@ fn to_target(input: &MonitorInput) -> Result<MonitorTarget, String> {
             Ok(MonitorTarget::Http {
                 url,
                 expect_status: input.expect_status,
+                contains: input
+                    .contains
+                    .as_deref()
+                    .map(str::trim)
+                    .filter(|needle| !needle.is_empty())
+                    .map(str::to_string),
             })
         }
         "tcp" => Ok(MonitorTarget::Tcp {
@@ -1145,6 +1176,15 @@ fn check_monitor_now(state: State<'_, AppState>, id: MonitorId) -> Result<(), St
         .map_err(|_| "uptime service lock poisoned".to_string())?
         .check_now(id);
     Ok(())
+}
+
+/// Uptime bildirimlerini açar/kapatır.
+#[tauri::command]
+fn set_notify_uptime(state: State<'_, AppState>, enabled: bool) -> Result<(), String> {
+    state
+        .lock()?
+        .set_notify_uptime(enabled)
+        .map_err(|e| e.to_string())
 }
 
 /// Pencere kapatılınca tepsiye inme ayarını değiştirir.
@@ -1278,9 +1318,21 @@ fn pump_uptime(app: AppHandle) {
         {
             let monitor_id = result.monitor_id;
             let up = result.up;
+            let reason = result.error.clone();
+            // Durum DEĞİŞİMİ yalnız geçmişten okunabilir (tek hata henüz Down
+            // değil — `MonitorHistory::state` iki ardışık hata arar).
+            let mut change = None;
             if let Ok(mut log) = state.uptime_log.lock() {
+                let before = monitor_state(&log, monitor_id);
                 log.record(result);
+                let after = monitor_state(&log, monitor_id);
                 dirty = true;
+                if before != after {
+                    change = Some((before, after));
+                }
+            }
+            if let Some((before, after)) = change {
+                notify_state_change(&app, monitor_id, before, after, reason);
             }
             let _ = app.emit("portal://uptime", UptimeMsg { monitor_id, up });
         }
@@ -1296,6 +1348,60 @@ fn pump_uptime(app: AppHandle) {
 
         std::thread::sleep(std::time::Duration::from_millis(250));
     }
+}
+
+/// Bir monitörün geçmişteki o anki durumu (kayıt yoksa Unknown).
+fn monitor_state(log: &UptimeLog, id: MonitorId) -> MonitorState {
+    log.history(id)
+        .map(portal_core::MonitorHistory::state)
+        .unwrap_or_default()
+}
+
+/// Durum değişiminde masaüstü bildirimi gönderir.
+///
+/// Yalnız DEĞİŞİMDE: her kontrolde bildirim gelseydi dakikada bir uyarı olurdu.
+/// İlk kontrolün Up çıkması da haber değildir — yalnız düşüş ve toparlanma.
+/// Bildirim gönderilemezse (kullanıcı OS'ta kapatmış, tepsi yok) sessiz geçilir:
+/// uyarı yolu ürünün kendi arayüzünde zaten var.
+fn notify_state_change(
+    app: &AppHandle,
+    id: MonitorId,
+    before: MonitorState,
+    after: MonitorState,
+    reason: Option<String>,
+) {
+    use tauri_plugin_notification::NotificationExt;
+
+    if !matches!(
+        (before, after),
+        (MonitorState::Down, MonitorState::Up) | (_, MonitorState::Down)
+    ) {
+        return;
+    }
+    let state = app.state::<AppState>();
+    let Ok(store) = state.lock() else {
+        return;
+    };
+    if !store.notify_uptime() {
+        return;
+    }
+    let Some(monitor) = store.monitors().iter().find(|m| m.id == id) else {
+        return;
+    };
+    let (title, body) = if after == MonitorState::Down {
+        (
+            format!("{} is down", monitor.label),
+            reason.unwrap_or_else(|| monitor.target.display()),
+        )
+    } else {
+        (
+            format!("{} is back up", monitor.label),
+            monitor.target.display(),
+        )
+    };
+    drop(store);
+
+    let _ = app.notification().builder().title(title).body(body).show();
 }
 
 /// Frontend'e giden kontrol bildirimi (ayrıntıyı panel `list_monitors` ile çeker).
@@ -1325,6 +1431,7 @@ fn main() {
 
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_notification::init())
         .manage(AppState {
             store: Mutex::new(store),
             runtime,
@@ -1388,6 +1495,7 @@ fn main() {
             remove_monitor,
             check_monitor_now,
             set_minimize_to_tray,
+            set_notify_uptime,
             set_terminal_font_size,
             open_external
         ])
@@ -1431,7 +1539,53 @@ fn main() {
 
 #[cfg(test)]
 mod tests {
-    use super::checked_web_url;
+    use super::{cert_alert, checked_web_url, monitor_state};
+    use portal_core::uptime_log::{CheckResult, MonitorState, UptimeLog};
+    use portal_core::MonitorId;
+
+    fn check(id: MonitorId, at: u64, up: bool) -> CheckResult {
+        CheckResult {
+            monitor_id: id,
+            at,
+            up,
+            latency_ms: up.then_some(10),
+            status: Some(if up { 200 } else { 500 }),
+            error: (!up).then(|| "boom".to_string()),
+            cert_expires_at: None,
+        }
+    }
+
+    #[test]
+    fn certificate_alert_escalates_at_the_core_thresholds() {
+        assert_eq!(cert_alert(None), None);
+        assert_eq!(cert_alert(Some(60)), None);
+        assert_eq!(cert_alert(Some(30)), Some("warn"));
+        assert_eq!(cert_alert(Some(8)), Some("warn"));
+        assert_eq!(cert_alert(Some(7)), Some("crit"));
+        assert_eq!(cert_alert(Some(-1)), Some("crit"));
+    }
+
+    #[test]
+    fn a_lasting_outage_changes_state_only_once() {
+        // Bildirim durum DEĞİŞİMİNDE gönderilir; kesinti sürdükçe tekrar etmemeli.
+        let id = MonitorId::new();
+        let mut log = UptimeLog::default();
+        let mut changes = Vec::new();
+        for (at, up) in [(1, true), (2, false), (3, false), (4, false), (5, true)] {
+            let before = monitor_state(&log, id);
+            log.record(check(id, at, up));
+            let after = monitor_state(&log, id);
+            if before != after {
+                changes.push(after);
+            }
+        }
+        // Unknown→Up · Up→Down (ikinci hatada) · Down→Up. Aradaki üçüncü hata
+        // yeni bir bildirim doğurmaz.
+        assert_eq!(
+            changes,
+            vec![MonitorState::Up, MonitorState::Down, MonitorState::Up]
+        );
+    }
 
     #[test]
     fn only_http_and_https_links_are_opened() {

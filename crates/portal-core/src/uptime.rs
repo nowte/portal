@@ -17,6 +17,7 @@ use std::sync::mpsc::{self, Receiver, RecvTimeoutError, Sender};
 use std::thread;
 use std::time::{Duration, Instant};
 
+use crate::cert;
 use crate::model::{Monitor, MonitorId, MonitorTarget};
 use crate::uptime_log::{now_unix, CheckResult};
 
@@ -157,9 +158,16 @@ fn run(
 pub fn check_once(monitor: &Monitor) -> CheckResult {
     let started = Instant::now();
     let (up, status, error) = match &monitor.target {
-        MonitorTarget::Http { url, expect_status } => {
-            check_http(url, *expect_status, monitor.timeout_secs)
-        }
+        MonitorTarget::Http {
+            url,
+            expect_status,
+            contains,
+        } => check_http(
+            url,
+            *expect_status,
+            contains.as_deref(),
+            monitor.timeout_secs,
+        ),
         MonitorTarget::Tcp { host, port } => (
             true,
             None,
@@ -169,6 +177,16 @@ pub fn check_once(monitor: &Monitor) -> CheckResult {
     let up = up && error.is_none();
     let elapsed = u32::try_from(started.elapsed().as_millis()).unwrap_or(u32::MAX);
 
+    // Sertifika yalnız AYAKTA olan https hedeflerde okunur: hedef zaten
+    // cevap vermiyorsa ikinci bir zaman aşımını beklemenin faydası yok.
+    // Tavan: ayakta olan her https kontrolü fazladan bir TLS el sıkışması
+    // yapar. Bitiş tarihi günlerce değişmediği için bu sonuç ileride
+    // önbelleklenebilir; ölçülen maliyet bunu gerektirmedi.
+    let cert_expires_at = match &monitor.target {
+        MonitorTarget::Http { url, .. } if up => cert::expires_at(url, monitor.timeout_secs),
+        _ => None,
+    };
+
     CheckResult {
         monitor_id: monitor.id,
         at: now_unix(),
@@ -176,13 +194,16 @@ pub fn check_once(monitor: &Monitor) -> CheckResult {
         latency_ms: up.then_some(elapsed),
         status,
         error,
+        cert_expires_at,
     }
 }
 
-/// HTTP(S) GET; yanıt kodu beklenene uymuyorsa hata metni döner.
+/// HTTP(S) GET; yanıt kodu beklenene uymuyorsa (ya da `contains` gövdede
+/// bulunmuyorsa) hata metni döner.
 fn check_http(
     url: &str,
     expect: Option<u16>,
+    contains: Option<&str>,
     timeout_secs: u32,
 ) -> (bool, Option<u16>, Option<String>) {
     let config = ureq::Agent::config_builder()
@@ -195,17 +216,42 @@ fn check_http(
     let agent: ureq::Agent = config.into();
 
     match agent.get(url).call() {
-        Ok(response) => {
+        Ok(mut response) => {
             let status = response.status().as_u16();
             let ok = match expect {
                 Some(want) => status == want,
                 None => status < 400,
             };
-            let error = (!ok).then(|| match expect {
-                Some(want) => format!("Expected HTTP {want}, got {status}"),
-                None => format!("HTTP {status}"),
-            });
-            (ok, Some(status), error)
+            if !ok {
+                let error = match expect {
+                    Some(want) => format!("Expected HTTP {want}, got {status}"),
+                    None => format!("HTTP {status}"),
+                };
+                return (false, Some(status), Some(error));
+            }
+            // Gövde yalnız aranacak bir metin varsa indirilir.
+            let Some(needle) = contains else {
+                return (true, Some(status), None);
+            };
+            match response.body_mut().read_to_string() {
+                Ok(body) if body.contains(needle) => (true, Some(status), None),
+                Ok(_) => (
+                    false,
+                    Some(status),
+                    // 200 döndü ama içerik yanlış: kullanıcı ARADIĞINI görsün.
+                    Some(format!(
+                        "HTTP {status} but the page didn't contain {needle:?}"
+                    )),
+                ),
+                Err(e) => (
+                    false,
+                    Some(status),
+                    Some(format!(
+                        "Couldn't read the page: {}",
+                        friendly(&e.to_string())
+                    )),
+                ),
+            }
         }
         Err(e) => (false, None, Some(friendly(&e.to_string()))),
     }
@@ -242,7 +288,79 @@ fn friendly(message: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::io::{Read, Write};
     use std::net::TcpListener;
+
+    /// Tek bir isteğe sabit gövdeyle cevap veren mini HTTP sunucusu; portunu döner.
+    fn serve_once(body: &'static str) -> u16 {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let port = listener.local_addr().unwrap().port();
+        thread::spawn(move || {
+            for mut stream in listener.incoming().take(1).flatten() {
+                // İstek okunmadan cevap yazmak bazı yığınlarda RST'ye yol açar.
+                let _ = stream.read(&mut [0u8; 1024]);
+                let _ = write!(
+                    stream,
+                    "HTTP/1.1 200 OK
+Content-Length: {}
+Connection: close
+
+{body}",
+                    body.len()
+                );
+                let _ = stream.flush();
+            }
+        });
+        port
+    }
+
+    /// Yerel mini sunucuyu hedefleyen bir monitör (opsiyonel anahtar kelimeyle).
+    fn http_monitor(port: u16, contains: Option<&str>) -> Monitor {
+        let mut monitor = Monitor::new(
+            "test",
+            MonitorTarget::Http {
+                url: format!("http://127.0.0.1:{port}/"),
+                expect_status: None,
+                contains: contains.map(str::to_string),
+            },
+        );
+        monitor.timeout_secs = 5;
+        monitor
+    }
+
+    #[test]
+    fn keyword_found_in_body_is_up() {
+        let port = serve_once("<html>all systems healthy</html>");
+        let result = check_once(&http_monitor(port, Some("healthy")));
+        assert!(result.up, "eşleşen sayfa up olmalı: {:?}", result.error);
+    }
+
+    #[test]
+    fn keyword_missing_is_down_even_with_200() {
+        let port = serve_once("<html>under maintenance</html>");
+        let result = check_once(&http_monitor(port, Some("healthy")));
+        assert!(!result.up, "eşleşmeyen sayfa 200 dönse de down olmalı");
+        assert_eq!(result.status, Some(200));
+        let error = result.error.unwrap();
+        // Hata ARANAN metni göstermeli, yoksa kullanıcı neyi düzelteceğini bilemez.
+        assert!(
+            error.contains("healthy"),
+            "hata aranan metni göstermeli: {error}"
+        );
+    }
+
+    #[test]
+    fn without_a_keyword_the_body_is_not_checked() {
+        let port = serve_once("<html>under maintenance</html>");
+        let result = check_once(&http_monitor(port, None));
+        assert!(result.up);
+    }
+
+    #[test]
+    fn plain_http_has_no_certificate() {
+        let port = serve_once("ok");
+        assert_eq!(check_once(&http_monitor(port, None)).cert_expires_at, None);
+    }
 
     fn tcp_monitor(host: &str, port: u16) -> Monitor {
         let mut monitor = Monitor::new(
@@ -343,6 +461,7 @@ mod tests {
             MonitorTarget::Http {
                 url: format!("http://127.0.0.1:{stalled_port}/"),
                 expect_status: None,
+                contains: None,
             },
         );
         slow.timeout_secs = 10;

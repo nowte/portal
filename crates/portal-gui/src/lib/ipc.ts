@@ -197,6 +197,10 @@ export const openExternal = (url: string): Promise<void> =>
 export const setMinimizeToTray = (enabled: boolean): Promise<void> =>
   invoke("set_minimize_to_tray", { enabled });
 
+/** Monitör düşüp kalkınca masaüstü bildirimi gönderilsin mi. */
+export const setNotifyUptime = (enabled: boolean): Promise<void> =>
+  invoke("set_notify_uptime", { enabled });
+
 // ── Yerel dosya sistemi ────────────────────────────────
 export const listLocal = (path: string): Promise<LocalListing> =>
   invoke<LocalListing>("list_local", { path });

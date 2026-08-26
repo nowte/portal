@@ -38,6 +38,20 @@ export function targetText(m: MonitorSummary): string {
   return t.kind === "http" ? t.url : `${t.host}:${t.port}`;
 }
 
+/** Sertifikası uyarı eşiğini geçen monitörler (eşik ÇEKİRDEKTE hesaplanır). */
+export function certWarnings(monitors: MonitorSummary[]): MonitorSummary[] {
+  return monitors.filter((m) => m.monitor.enabled && m.certAlert !== null);
+}
+
+/** Sertifikanın kalan ömrü — tek cümle, her yüzeyde aynı. */
+export function certText(days: number): string {
+  const n = Math.abs(days);
+  const unit = n === 1 ? "day" : "days";
+  if (days < 0) return `expired ${n} ${unit} ago`;
+  if (days === 0) return "expires today";
+  return `expires in ${n} ${unit}`;
+}
+
 /** Uptime yüzdesi — kontrol yoksa çizgi (0% yazmak yanıltıcı olurdu). */
 export function pctText(up: number, down: number): string {
   const total = up + down;

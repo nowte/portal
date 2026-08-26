@@ -24,6 +24,7 @@ interface FormState {
   target: string;
   port: string;
   expectStatus: string;
+  contains: string;
   intervalSecs: string;
   timeoutSecs: string;
   enabled: boolean;
@@ -37,6 +38,7 @@ const emptyForm = (): FormState => ({
   target: "",
   port: "",
   expectStatus: "",
+  contains: "",
   intervalSecs: "60",
   timeoutSecs: "10",
   enabled: true,
@@ -52,6 +54,7 @@ function formOf(m: MonitorSummary): FormState {
     target: t.kind === "http" ? t.url : t.host,
     port: t.kind === "tcp" ? String(t.port) : "",
     expectStatus: t.kind === "http" && t.expect_status ? String(t.expect_status) : "",
+    contains: t.kind === "http" ? (t.contains ?? "") : "",
     intervalSecs: String(m.monitor.interval_secs),
     timeoutSecs: String(m.monitor.timeout_secs),
     enabled: m.monitor.enabled,
@@ -70,6 +73,7 @@ function toInput(f: FormState): MonitorInput {
     target: f.target,
     port: f.kind === "tcp" ? num(f.port, 0) : null,
     expectStatus: f.kind === "http" && f.expectStatus.trim() ? num(f.expectStatus, 200) : null,
+    contains: f.kind === "http" && f.contains.trim() ? f.contains.trim() : null,
     intervalSecs: num(f.intervalSecs, 60),
     timeoutSecs: num(f.timeoutSecs, 10),
     enabled: f.enabled,
@@ -178,19 +182,34 @@ export function UptimePanel() {
                   </span>
                 </label>
               ) : (
-                <label className="hf">
-                  <span className="hf-k">
-                    Expected status <span className="hf-opt">(optional)</span>
-                  </span>
-                  <span className="fwrap">
-                    <input
-                      placeholder="any 2xx or 3xx"
-                      value={form.expectStatus}
-                      onChange={(e) => setForm({ ...form, expectStatus: e.target.value })}
-                      onKeyDown={(e) => e.key === "Enter" && void submit()}
-                    />
-                  </span>
-                </label>
+                <>
+                  <label className="hf">
+                    <span className="hf-k">
+                      Expected status <span className="hf-opt">(optional)</span>
+                    </span>
+                    <span className="fwrap">
+                      <input
+                        placeholder="any 2xx or 3xx"
+                        value={form.expectStatus}
+                        onChange={(e) => setForm({ ...form, expectStatus: e.target.value })}
+                        onKeyDown={(e) => e.key === "Enter" && void submit()}
+                      />
+                    </span>
+                  </label>
+                  <label className="hf">
+                    <span className="hf-k">
+                      Response must contain <span className="hf-opt">(optional)</span>
+                    </span>
+                    <span className="fwrap">
+                      <input
+                        placeholder="e.g. All systems operational"
+                        value={form.contains}
+                        onChange={(e) => setForm({ ...form, contains: e.target.value })}
+                        onKeyDown={(e) => e.key === "Enter" && void submit()}
+                      />
+                    </span>
+                  </label>
+                </>
               )}
             </div>
 

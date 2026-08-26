@@ -56,6 +56,17 @@ keyring = "4"
 # Uptime kontrolleri icin blocking HTTP istemcisi. reqwest yerine ureq: bu is
 # icin async gerekmiyor ve hyper/tower agacini getirmiyor.
 ureq = "3"
+# SSL sertifika süresi: ureq yanıt üzerinden sertifikayı vermiyor, bu yüzden
+# TLS el sıkışmasını doğrudan rustls ile yapıp peer sertifikasını okuyoruz.
+# Yeni bir ağaç DEĞİL: ureq zaten ikisini de derliyor. Sağlayıcı `ring` —
+# rustls'in varsayılanı aws-lc-rs cmake/nasm ister (bkz. russh kararı).
+rustls = { version = "0.23", default-features = false, features = [
+    "ring",
+    "std",
+    "tls12",
+    "logging",
+] }
+webpki-roots = "1"
 portal-core = { path = "crates/portal-core" }
 
 # Release binary'leri küçük ve hızlı: tek statik binary hedefi (docs/ARCHITECTURE.md §10).

@@ -6,7 +6,7 @@
 import { CircleAlert } from "lucide-react";
 import { checkMonitorNow } from "../lib/ipc";
 import { SpinButton } from "../components/SpinButton";
-import { agoText, dayText, pctText, targetText, useMonitors } from "../lib/uptime";
+import { agoText, certText, dayText, pctText, targetText, useMonitors } from "../lib/uptime";
 import { StateIcon } from "../components/StateIcon";
 
 /** Verilen günlerin toplamından uptime yüzdesi. */
@@ -40,6 +40,8 @@ export function MonitorPage({ monitorId }: { monitorId: string }) {
         <div className="mon-status">
           <StateIcon state={m.state} enabled={m.monitor.enabled} size={20} />
           <span className="mono">{targetText(m)}</span>
+          {/* Sertifika bilgisi uyarı beklemeden görünür: izlendiğini bilmek de bilgidir. */}
+          {m.certDays !== null && <span>· certificate {certText(m.certDays)}</span>}
           <span className="sp" />
           <SpinButton
             className="tool"
@@ -79,6 +81,18 @@ export function MonitorPage({ monitorId }: { monitorId: string }) {
             </span>
           </div>
         </div>
+
+        {m.certAlert !== null && m.certDays !== null && (
+          <div className="mon-status err">
+            <CircleAlert className="err-i" size={16} strokeWidth={1.75} />
+            <span>
+              The TLS certificate {certText(m.certDays)}.
+              <span className="raw">
+                Renew it before then, or browsers will refuse to open {targetText(m)}.
+              </span>
+            </span>
+          </div>
+        )}
 
         {last && !last.up && (
           <div className="mon-status err">

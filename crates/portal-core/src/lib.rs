@@ -9,6 +9,7 @@
 #![warn(clippy::unwrap_used, clippy::expect_used)]
 #![forbid(unsafe_code)]
 
+pub mod cert;
 pub mod config;
 pub mod error;
 pub mod fuzzy;
@@ -29,6 +30,7 @@ pub mod vault;
 
 mod persist;
 
+pub use cert::{CERT_CRIT_DAYS, CERT_WARN_DAYS};
 pub use config::{Config, Theme};
 pub use error::{Error, Result};
 pub use keys::{generate_ed25519, key_info, GeneratedKey, KeyInfo};

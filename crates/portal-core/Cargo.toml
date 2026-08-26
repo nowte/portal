@@ -28,5 +28,8 @@ base64 = { workspace = true }
 keyring = { workspace = true }
 # Uptime monitörü: HTTP kontrolü (blocking, kendi thread'inde).
 ureq = { workspace = true }
+# Uptime monitörü: https hedeflerde sertifika bitiş tarihi (ayrı TLS el sıkışması).
+rustls = { workspace = true }
+webpki-roots = { workspace = true }
 # Güvenli geçici dosya (uzak-edit içeriği): benzersiz ad + 0600 + O_EXCL (P6-D #4).
 tempfile = { workspace = true }

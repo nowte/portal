@@ -174,6 +174,7 @@ mod tests {
             crate::model::MonitorTarget::Http {
                 url: "https://example.com".into(),
                 expect_status: Some(200),
+                contains: None,
             },
         );
         monitor.host_id = Some(host.id);

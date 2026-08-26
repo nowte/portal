@@ -1821,6 +1821,7 @@ dependencies = [
  "rand",
  "russh",
  "russh-sftp",
+ "rustls",
  "serde",
  "serde_json",
  "tempfile",
@@ -1830,6 +1831,7 @@ dependencies = [
  "tracing",
  "ureq",
  "uuid",
+ "webpki-roots",
  "zeroize",
 ]
 

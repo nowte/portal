@@ -35,6 +35,10 @@ pub struct Config {
     /// [`crate::store::TERM_FONT_DEFAULT`].
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub terminal_font_size: Option<u8>,
+    /// Bir monitör düşünce/geri gelince masaüstü bildirimi gönderilsin mi.
+    /// Yoksa AÇIK sayılır — bildirim istemeyen kapatır, isteyen ayar aramaz.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub notify_uptime: Option<bool>,
     /// Yerel profillerin **hassas olmayan** indeksi (ad, kilit bayrakları). Her profilin
     /// asıl verisi kendi şifreli `vault.portal`'ındadır; ama bu indeks kilit açılmadan
     /// okunabilmeli (hangi profil var, parola gerekir mi). Bkz. docs/ARCHITECTURE.md §5.
@@ -118,6 +122,7 @@ mod tests {
             minimize_to_tray: true,
             sync_dir: Some(std::path::PathBuf::from("/backups/portal")),
             terminal_font_size: Some(16),
+            notify_uptime: Some(false),
             profiles: vec![profile],
         };
 

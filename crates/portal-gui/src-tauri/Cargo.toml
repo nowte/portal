@@ -30,3 +30,6 @@ portal-core = { path = "../../portal-core" }
 # Terminalde tıklanan URL PLATFORM GÜVENLİ açılsın (kabuk yok, tırnak/enjeksiyon
 # sorunu yok). Açmadan önce kullanıcıya onay sorulur; eklenti yalnızca açar.
 tauri-plugin-opener = "2.5.4"
+# Monitör düşüp kalkınca OS bildirimi. YALNIZ Rust'tan çağrılır (JS'e yetki
+# verilmedi): bildirim kararı çekirdeğin durum değişiminden doğar, sayfadan değil.
+tauri-plugin-notification = "2"

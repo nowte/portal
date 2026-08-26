@@ -39,6 +39,7 @@ const EMPTY_BOOT = {
   // Profil yok → vault düz metin → kimlik hatırlanamaz (çekirdek reddeder).
   can_remember: false,
   terminal_font_size: 13,
+  notify_uptime: true,
   hosts: [] as unknown[],
   folders: [] as unknown[],
 };
@@ -138,6 +139,8 @@ function applyOverrides(): void {
         today: { day, up: 1400, down: 0, latency_sum_ms: 1400 * 140 },
         days: days(0),
         recent: series(true, 40),
+        certDays: 12,
+        certAlert: "warn",
       },
       {
         monitor: {
@@ -154,6 +157,8 @@ function applyOverrides(): void {
         today: { day, up: 1380, down: 20, latency_sum_ms: 1380 * 90 },
         days: days(20),
         recent: series(false, 40),
+        certDays: null,
+        certAlert: null,
       },
     ];
   }

@@ -37,6 +37,8 @@ export function Settings() {
   // Tepsiye inme ayarı bootstrap'tan gelir; toggle sonrası yerelde de tutulur ki
   // kutucuk anında dolsun (bootstrap tazelemesini beklemeden).
   const [tray, setTray] = useState(false);
+  // Aynı gerekçe: bildirim anahtarı da yerelde tutulur.
+  const [notify, setNotify] = useState(true);
 
   const loadProfiles = useCallback(() => {
     void ipc.listProfiles().then(setProfiles).catch(() => undefined);
@@ -69,13 +71,26 @@ export function Settings() {
     }
   }, [tray]);
 
+  const toggleNotify = useCallback(async (): Promise<void> => {
+    const next = !notify;
+    setNotify(next);
+    try {
+      await ipc.setNotifyUptime(next);
+    } catch {
+      setNotify(!next); // yazılamadıysa kutucuk gerçeği göstersin
+    }
+  }, [notify]);
+
   // Açılınca / sekme değişince ilgili veriyi tazele.
   useEffect(() => {
     if (!open) return;
     if (tab === "profiles") loadProfiles();
     if (tab === "sync") loadSync();
-    if (tab === "appearance") setTray(boot?.minimize_to_tray ?? false);
-  }, [open, tab, boot?.minimize_to_tray, loadProfiles, loadSync]);
+    if (tab === "appearance") {
+      setTray(boot?.minimize_to_tray ?? false);
+      setNotify(boot?.notify_uptime ?? true);
+    }
+  }, [open, tab, boot?.minimize_to_tray, boot?.notify_uptime, loadProfiles, loadSync]);
 
   useEffect(() => {
     if (!open) return;
@@ -213,6 +228,23 @@ export function Settings() {
                 </span>
                 <span>
                   <b>Minimize to tray on close</b> — keep checking sites in the background
+                </span>
+              </button>
+
+              <h3 className="set-h">Notifications</h3>
+              <p className="set-sub">
+                Portal tells you when a monitored site or port stops answering, and again
+                when it comes back. Only on a change — not on every check.
+              </p>
+              <button
+                className={"hf-check lit" + (notify ? " on" : "")}
+                onClick={() => void toggleNotify()}
+              >
+                <span className="hf-box">
+                  <Check size={16} strokeWidth={2} />
+                </span>
+                <span>
+                  <b>Notify me when a monitor goes down</b> — and when it recovers
                 </span>
               </button>
             </section>
