@@ -30,7 +30,7 @@ function close(): void {
   emit();
 }
 
-const REPO = "https://github.com/nowtes/portal";
+const REPO = "https://github.com/nowte/portal";
 
 function CopyLink({ value }: { value: string }) {
   const [done, setDone] = useState(false);
