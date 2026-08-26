@@ -124,7 +124,16 @@ function crumbs(path: string): { name: string; path: string }[] {
 }
 
 // deferConnect: bkz. TerminalPanel — diskten geri yüklenen pane kendiliğinden bağlanmaz.
-export function FilesPanel({ hostId, deferConnect }: { hostId: string; deferConnect?: boolean }) {
+export function FilesPanel({
+  hostId,
+  paneId,
+  deferConnect,
+}: {
+  hostId: string;
+  /** Dock pane kimliği — bağlantı durumu sekmede bunun üzerinden görünür. */
+  paneId?: string;
+  deferConnect?: boolean;
+}) {
   const { hosts, reportConn, dropConn } = usePortal();
   const host = hosts.find((h) => h.id === hostId);
 
@@ -233,7 +242,7 @@ export function FilesPanel({ hostId, deferConnect }: { hostId: string; deferConn
     try {
       const id = await connectFiles(hostId, auth);
       sessionRef.current = id;
-      reportConn(id, hostId, "files", "connecting");
+      reportConn(id, hostId, "files", "connecting", paneId);
       unlistenRef.current = await onSftp(id, (m) => {
         switch (m.type) {
           case "hostKey":
@@ -242,7 +251,7 @@ export function FilesPanel({ hostId, deferConnect }: { hostId: string; deferConn
           case "ready":
             readyRef.current = true;
             setPhase("ready");
-            reportConn(id, hostId, "files", "connected");
+            reportConn(id, hostId, "files", "connected", paneId);
             loadRemote(remotePathRef.current);
             break;
           case "listing":
@@ -292,7 +301,7 @@ export function FilesPanel({ hostId, deferConnect }: { hostId: string; deferConn
           case "error":
             if (!readyRef.current) void forgetCreds(hostId);
             setPhase("error");
-            reportConn(id, hostId, "files", "error");
+            reportConn(id, hostId, "files", "error", paneId);
             setMessage(m.message);
             break;
         }
@@ -301,7 +310,26 @@ export function FilesPanel({ hostId, deferConnect }: { hostId: string; deferConn
       setPhase("error");
       setMessage(String(e));
     }
-  }, [host, hostId, loadLocal, loadRemote, reportConn]);
+  }, [host, hostId, paneId, loadLocal, loadRemote, reportConn]);
+
+  // Terminal'dekiyle AYNI geri dönüş yolu: dinleyiciyi sök, oturumu kapat, kaydı
+  // düşür (yoksa sekmedeki işaret ölü oturumu gösterir), baştan bağlan.
+  const retry = () => {
+    if (unlistenRef.current) {
+      unlistenRef.current();
+      unlistenRef.current = null;
+    }
+    const id = sessionRef.current;
+    if (id != null) {
+      void closeSession(id);
+      dropConn(id);
+    }
+    sessionRef.current = null;
+    readyRef.current = false;
+    setMessage("");
+    setRemoteErr(null);
+    void connect();
+  };
 
   useEffect(() => {
     // Yerel taraf her hâlükârda yüklenir (bağlantı gerektirmez); uzak taraf bekler.
@@ -705,12 +733,17 @@ export function FilesPanel({ hostId, deferConnect }: { hostId: string; deferConn
               </div>
             )}
             {phase === "error" && (
-              <div className="empty err">
-                <span className="mk" />
-                <span>
+              <div className="err-retry">
+                {/* Simge ErrorNote'tan gelir: buradaki `.mk` noktasının hiç kuralı
+                    yoktu, yani hata İŞARETSİZ çiziliyordu (renk de tek taşıyıcı
+                    olamaz, §9). */}
+                <ErrorNote>
                   Couldn&apos;t open files on this server.
                   <span className="raw">{message}</span>
-                </span>
+                </ErrorNote>
+                <button className="btn-primary" onClick={retry}>
+                  <span>Retry</span>
+                </button>
               </div>
             )}
             {remoteErr && (

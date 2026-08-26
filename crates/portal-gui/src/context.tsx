@@ -64,12 +64,15 @@ interface PortalCtx {
   /** Bir komuttan dönen güncel Bootstrap'ı benimse (profil değişimi/kilit/senkron). */
   adoptBootstrap: (b: Bootstrap) => void;
   // ── Canlı bağlantı durumu (paneller bildirir; Gateway/Hosts/Home okur) ──
-  /** Bir oturumun fazını bildir (connect/olay/temizlik anında). */
-  reportConn: (id: number, hostId: string, kind: string, state: ConnState) => void;
-  /** Bir oturumu durumdan düşür (panel kapanınca). */
+  /** Bir oturumun fazını bildir (connect/olay/temizlik anında).
+   *  `paneId` verilirse durum o dock sekmesine de bağlanır (bkz. paneState). */
+  reportConn: (id: number, hostId: string, kind: string, state: ConnState, paneId?: string) => void;
+  /** Bir oturumu durumdan düşür (panel kapanınca ya da yeniden denemeden önce). */
   dropConn: (id: number) => void;
   /** Bir host'un toplam bağlantı durumu. */
   hostState: (hostId: string) => HostConn;
+  /** Bir dock pane'inin (sekmesinin) oturum durumu; oturumu yoksa null. */
+  paneState: (paneId: string) => ConnState | null;
   /** Bağlı (connected) oturum sayısı. */
   liveSessions: number;
   /** En az bir bağlı oturumu olan farklı host sayısı. */
@@ -91,10 +94,10 @@ export function PortalProvider({ children }: { children: ReactNode }) {
   const [theme, setTheme] = useState("black");
   const [ready, setReady] = useState(false);
   const [selectedHost, setSelectedHost] = useState<string | null>(null);
-  // Canlı oturum durumu: sessionId → {hostId, kind, state}.
-  const [conns, setConns] = useState<Record<number, { hostId: string; kind: string; state: ConnState }>>(
-    {},
-  );
+  // Canlı oturum durumu: sessionId → {hostId, kind, state, paneId}.
+  const [conns, setConns] = useState<
+    Record<number, { hostId: string; kind: string; state: ConnState; paneId?: string }>
+  >({});
 
   // Tema değişince kök öğeye uygula (anında; CSS token'ları geçiş yapar).
   useEffect(() => {
@@ -188,8 +191,8 @@ export function PortalProvider({ children }: { children: ReactNode }) {
   );
 
   const reportConn = useCallback(
-    (id: number, hostId: string, kind: string, state: ConnState) => {
-      setConns((c) => ({ ...c, [id]: { hostId, kind, state } }));
+    (id: number, hostId: string, kind: string, state: ConnState, paneId?: string) => {
+      setConns((c) => ({ ...c, [id]: { hostId, kind, state, paneId } }));
     },
     [],
   );
@@ -246,6 +249,13 @@ export function PortalProvider({ children }: { children: ReactNode }) {
     },
     [conns],
   );
+  // Sekmedeki durum işareti buradan okunur. Pane yeniden bağlanırken ESKİ oturumu
+  // önce düşürür (dropConn), bu yüzden bir pane'in en fazla bir kaydı olur.
+  const paneState = useCallback(
+    (paneId: string): ConnState | null =>
+      Object.values(conns).find((x) => x.paneId === paneId)?.state ?? null,
+    [conns],
+  );
   const liveSessions = useMemo(
     () => Object.values(conns).filter((x) => x.state === "connected").length,
     [conns],
@@ -288,6 +298,7 @@ export function PortalProvider({ children }: { children: ReactNode }) {
         reportConn,
         dropConn,
         hostState,
+        paneState,
         liveSessions,
         onlineHosts,
       }}

@@ -21,7 +21,6 @@ pub mod ssh;
 pub mod ssh_config;
 pub mod store;
 pub mod sync;
-pub mod system;
 pub mod teaching;
 pub mod tunnel;
 pub mod uptime;
@@ -33,7 +32,7 @@ mod persist;
 pub use config::{Config, Theme};
 pub use error::{Error, Result};
 pub use keys::{generate_ed25519, key_info, GeneratedKey, KeyInfo};
-pub use metrics::{Metrics, MetricsEvent, MetricsSession};
+pub use metrics::{DiskInfo, Metrics, ProcInfo, SystemEvent, SystemReport, SystemSession};
 pub use model::{
     AuthMethod, Folder, FolderId, Host, HostId, Identity, IdentityId, Monitor, MonitorId,
     MonitorTarget, Profile, ProfileId, Session, SessionId, SessionView, Snippet, SnippetId,
@@ -49,7 +48,6 @@ pub use ssh::{
 pub use ssh_config::ImportedHost;
 pub use store::{ImportSummary, Store};
 pub use sync::{SyncOutcome, SyncStatus};
-pub use system::{DiskInfo, ProcInfo, SystemEvent, SystemReport, SystemSession};
 pub use teaching::{TeachingCard, Topic};
 pub use tunnel::{TunnelEvent, TunnelKind, TunnelSession, TunnelSpec};
 pub use uptime::{check_once, UptimeEvent, UptimeService};

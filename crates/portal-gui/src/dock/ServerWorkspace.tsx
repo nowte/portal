@@ -8,6 +8,8 @@
 // drop hedefleri isabet testinden düşüyordu. Bkz. styles.css'teki uyarı.
 
 import { TabClose } from "../components/TabClose";
+import { StateIcon } from "../components/StateIcon";
+import { usePortal, type ConnState } from "../context";
 import { type ComponentProps, useEffect } from "react";
 import {
   DockviewReact,
@@ -36,15 +38,24 @@ const nestedComponents: Record<string, React.FunctionComponent<IDockviewPanelPro
   terminal: (p: IDockviewPanelProps) => (
     <TerminalPanel
       hostId={p.params.hostId as string}
+      paneId={p.api.id}
       command={p.params.command as string | undefined}
       deferConnect={p.params.restored === true}
     />
   ),
   files: (p: IDockviewPanelProps) => (
-    <FilesPanel hostId={p.params.hostId as string} deferConnect={p.params.restored === true} />
+    <FilesPanel
+      hostId={p.params.hostId as string}
+      paneId={p.api.id}
+      deferConnect={p.params.restored === true}
+    />
   ),
   monitor: (p: IDockviewPanelProps) => (
-    <MonitorPanel hostId={p.params.hostId as string} deferConnect={p.params.restored === true} />
+    <MonitorPanel
+      hostId={p.params.hostId as string}
+      paneId={p.api.id}
+      deferConnect={p.params.restored === true}
+    />
   ),
   editor: (p: IDockviewPanelProps) => (
     <EditorPanel
@@ -55,10 +66,28 @@ const nestedComponents: Record<string, React.FunctionComponent<IDockviewPanelPro
   ),
 };
 
-// Pane sekmeleri: sade başlık + kapatma (×). "panefixed" = kapatılamaz (gateway).
+// Sekmedeki bağlantı durumu. Biçim de konuşur (§9): tik · ünlem · kesikli daire —
+// renk tek taşıyıcı değil. Oturumu olmayan pane (Gateway, editör) işaret taşımaz.
+const CONN_MARK: Record<ConnState, { state: "up" | "down" | "unknown"; label: string }> = {
+  connecting: { state: "unknown", label: "Connecting" },
+  connected: { state: "up", label: "Connected" },
+  error: { state: "down", label: "Couldn't connect" },
+  closed: { state: "unknown", label: "Disconnected" },
+};
+
+function PaneMark({ paneId }: { paneId: string }) {
+  const { paneState } = usePortal();
+  const conn = paneState(paneId);
+  if (!conn) return null;
+  const mark = CONN_MARK[conn];
+  return <StateIcon state={mark.state} size={16} label={mark.label} />;
+}
+
+// Pane sekmeleri: durum işareti + başlık + kapatma (×). "panefixed" = kapatılamaz (gateway).
 const nestedTabs: Record<string, React.FunctionComponent<IDockviewPanelHeaderProps>> = {
   pane: (p: IDockviewPanelHeaderProps) => (
     <div className="dv-pane-tab" title={p.api.title}>
+      <PaneMark paneId={p.api.id} />
       <span className="dv-pane-tab-t">{p.api.title}</span>
       <TabClose title="Close" onClose={() => p.api.close()} />
     </div>

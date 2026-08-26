@@ -38,7 +38,16 @@ function level(pct: number): string {
 }
 
 // deferConnect: bkz. TerminalPanel — diskten geri yüklenen pane kendiliğinden bağlanmaz.
-export function MonitorPanel({ hostId, deferConnect }: { hostId: string; deferConnect?: boolean }) {
+export function MonitorPanel({
+  hostId,
+  paneId,
+  deferConnect,
+}: {
+  hostId: string;
+  /** Dock pane kimliği — bağlantı durumu sekmede bunun üzerinden görünür. */
+  paneId?: string;
+  deferConnect?: boolean;
+}) {
   const { hosts, reportConn, dropConn } = usePortal();
   const host = hosts.find((h) => h.id === hostId);
 
@@ -76,7 +85,7 @@ export function MonitorPanel({ hostId, deferConnect }: { hostId: string; deferCo
     try {
       const id = await connectMonitor(hostId, auth);
       sessionRef.current = id;
-      reportConn(id, hostId, "monitor", "connecting");
+      reportConn(id, hostId, "monitor", "connecting", paneId);
       unlistenRef.current = await onMetrics(id, (msg) => {
         switch (msg.type) {
           case "hostKey":
@@ -85,7 +94,7 @@ export function MonitorPanel({ hostId, deferConnect }: { hostId: string; deferCo
           case "update":
             gotRef.current = true;
             setPhase("live");
-            reportConn(id, hostId, "monitor", "connected");
+            reportConn(id, hostId, "monitor", "connected", paneId);
             setM(msg.metrics);
             setCpuHist((h) => [...h, msg.metrics.cpuPct].slice(-HISTORY));
             setMemHist((h) => [...h, msg.metrics.memPct].slice(-HISTORY));
@@ -95,7 +104,7 @@ export function MonitorPanel({ hostId, deferConnect }: { hostId: string; deferCo
             if (!gotRef.current) {
               void forgetCreds(hostId);
               setPhase("error");
-              reportConn(id, hostId, "monitor", "error");
+              reportConn(id, hostId, "monitor", "error", paneId);
               setMessage(msg.message);
             }
             break;
@@ -105,7 +114,7 @@ export function MonitorPanel({ hostId, deferConnect }: { hostId: string; deferCo
       setPhase("error");
       setMessage(String(e));
     }
-  }, [host, hostId, reportConn]);
+  }, [host, hostId, paneId, reportConn]);
 
   useEffect(() => {
     if (!deferConnect) void connect();
@@ -119,6 +128,24 @@ export function MonitorPanel({ hostId, deferConnect }: { hostId: string; deferCo
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // Terminal'dekiyle AYNI geri dönüş yolu: dinleyiciyi sök, oturumu kapat, kaydı
+  // düşür (yoksa sekmedeki işaret ölü oturumu gösterir), baştan bağlan.
+  const retry = () => {
+    if (unlistenRef.current) {
+      unlistenRef.current();
+      unlistenRef.current = null;
+    }
+    const id = sessionRef.current;
+    if (id != null) {
+      void closeSession(id);
+      dropConn(id);
+    }
+    sessionRef.current = null;
+    gotRef.current = false;
+    setMessage("");
+    void connect();
+  };
 
   const decide = (accept: boolean) => {
     const id = sessionRef.current;
@@ -151,12 +178,17 @@ export function MonitorPanel({ hostId, deferConnect }: { hostId: string; deferCo
           </div>
         )}
         {phase === "error" && (
-          <div className="mon-status err">
-            <span className="st" />
-            <span>
-              Couldn&apos;t read this server&apos;s health.
-              <span className="raw">{message}</span>
-            </span>
+          <div className="err-retry">
+            <div className="mon-status err">
+              <span className="st" />
+              <span>
+                Couldn&apos;t read this server&apos;s health.
+                <span className="raw">{message}</span>
+              </span>
+            </div>
+            <button className="btn-primary" onClick={retry}>
+              <span>Retry</span>
+            </button>
           </div>
         )}
 

@@ -1,7 +1,7 @@
 import { Check } from "lucide-react";
 import { useEffect, useState } from "react";
 import { usePortal } from "../context";
-import markSrc from "../assets/portal-mark-black.png";
+import markSrc from "../assets/portal-mark.svg";
 import { APP_VERSION } from "../lib/version";
 
 // Açılış yükleme ekranı.
@@ -26,7 +26,8 @@ const MIN_VISIBLE = 320;
 
 // Mark CSS mask olarak basılır: maske yalnız alpha kanalını kullanır, renk
 // --text'ten gelir → dört temada da doğru (DESIGN §24.2, filter/invert yok).
-const brandVars = { "--mark-src": `url(${markSrc})` } as React.CSSProperties;
+// url() tırnaklı — gömülü data URI tek tırnak taşır (bkz. main.tsx).
+const brandVars = { "--mark-src": `url("${markSrc}")` } as React.CSSProperties;
 
 export function LoadingScreen({ onDone, fading }: { onDone: () => void; fading: boolean }) {
   const { ready } = usePortal();

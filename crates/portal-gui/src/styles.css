@@ -734,12 +734,11 @@ input, textarea, select { font: inherit; }
   --mark-glow: 0.28;
   display: block; flex: none;
   height: var(--mark-h);
-  width: calc(var(--mark-h) * 0.5314);   /* ölçülen en÷boy */
+  width: calc(var(--mark-h) * 0.5295);   /* markın en÷boy'u: 494÷933 */
   background: var(--text);
   -webkit-mask-image: var(--mark-src); mask-image: var(--mark-src);
   -webkit-mask-repeat: no-repeat; mask-repeat: no-repeat;
-  -webkit-mask-size: 403.15% 214.23%; mask-size: 403.15% 214.23%;
-  -webkit-mask-position: 49.87% 50.18%; mask-position: 49.87% 50.18%;
+  -webkit-mask-size: 100% 100%; mask-size: 100% 100%;
   filter: drop-shadow(0 0 calc(var(--mark-h) * 0.14) rgba(250, 250, 250, var(--mark-glow)));
   transition: filter var(--dur-panel) var(--ease-out);
 }
@@ -1239,6 +1238,15 @@ input, textarea, select { font: inherit; }
 .panelbody { animation: p-rise var(--dur-panel) var(--ease-out) both; }
 /* §7.3 — panel etiketi: cümle düzeni, 600, --dim. UPPERCASE tracked YOK. */
 .plabel { font-size: var(--fs-2); font-weight: 600; color: var(--dim); padding: var(--sp-2); }
+
+/* Bağlantı hatası + geri dönüş yolu. Terminal'de bu ikili `.term-card`ın içinde
+   duruyor; Files/Monitor'de satır içi — ama SÖZCÜK ve sıra aynı: düz-dilli hata,
+   altında "Retry". Hatasız geri dönüşü olmayan ekran bırakmıyoruz. */
+.err-retry {
+  display: flex; flex-direction: column; align-items: flex-start;
+  gap: var(--sp-3); padding: var(--sp-3);
+}
+.err-retry > .mon-status.err { padding: 0; }
 
 /* Geri yüklenmiş ama bağlanmamış pane'in bekleme kartı (idle deseni, §12e). */
 .pane-idle {
@@ -2757,16 +2765,13 @@ input, textarea, select { font: inherit; }
   animation: p-card-in var(--dur-card) var(--ease-out) both;
 }
 
-/* PNG'nin şeffaf payı çok geniş. Aşağıdaki mask-size/position, varlığın
-   GERÇEK alpha bbox'ından ölçüldü; varlık değişirse yeniden ölçülür. */
 .loading-mark {
   position: relative; overflow: hidden;
   height: var(--mark-h);
-  width: calc(var(--mark-h) * 0.5314);   /* ölçülen en÷boy */
+  width: calc(var(--mark-h) * 0.5295);   /* markın en÷boy'u: 494÷933 */
   -webkit-mask-image: var(--mark-src); mask-image: var(--mark-src);
   -webkit-mask-repeat: no-repeat; mask-repeat: no-repeat;
-  -webkit-mask-size: 403.15% 214.23%; mask-size: 403.15% 214.23%;
-  -webkit-mask-position: 49.87% 50.18%; mask-position: 49.87% 50.18%;
+  -webkit-mask-size: 100% 100%; mask-size: 100% 100%;
 }
 .loading-mark .rest { position: absolute; inset: 0; background: var(--text); opacity: var(--mark-rest); }
 /* 2400ms KASITLI yavaş: hızlı dönen gösterge "acele" der, biz "sakin" deriz. */

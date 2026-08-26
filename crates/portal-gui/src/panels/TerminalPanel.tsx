@@ -38,10 +38,13 @@ function decode(b64: string): Uint8Array {
 // kullanıcı "Connect"e basana kadar bekler.
 export function TerminalPanel({
   hostId,
+  paneId,
   command,
   deferConnect,
 }: {
   hostId: string;
+  /** Dock pane kimliği — bağlantı durumu sekmede bunun üzerinden görünür. */
+  paneId?: string;
   command?: string;
   deferConnect?: boolean;
 }) {
@@ -84,7 +87,7 @@ export function TerminalPanel({
     try {
       const id = await connectShell(hostId, term.cols, term.rows, auth);
       sessionRef.current = id;
-      reportConn(id, hostId, "shell", "connecting");
+      reportConn(id, hostId, "shell", "connecting", paneId);
       const unlisten = await onShell(id, (m) => {
         switch (m.type) {
           case "hostKey":
@@ -93,7 +96,7 @@ export function TerminalPanel({
           case "connected":
             connectedRef.current = true;
             setPhase("connected");
-            reportConn(id, hostId, "shell", "connected");
+            reportConn(id, hostId, "shell", "connected", paneId);
             term.focus();
             if (commandRef.current) {
               void sendInput(id, `${commandRef.current}\n`);
@@ -106,13 +109,13 @@ export function TerminalPanel({
           case "disconnected":
             setPhase("closed");
             setMessage(m.message);
-            reportConn(id, hostId, "shell", "closed");
+            reportConn(id, hostId, "shell", "closed", paneId);
             term.write(`\r\n\x1b[90m— ${m.message} —\x1b[0m\r\n`);
             break;
           case "error":
             if (!connectedRef.current) void forgetCreds(hostId);
             setPhase("error");
-            reportConn(id, hostId, "shell", "error");
+            reportConn(id, hostId, "shell", "error", paneId);
             setMessage(m.message);
             break;
         }
@@ -123,7 +126,7 @@ export function TerminalPanel({
       setPhase("error");
       setMessage(String(e));
     }
-  }, [host, hostId, reportConn]);
+  }, [host, hostId, paneId, reportConn]);
 
   const unlistenRef = useRef<UnlistenFn | null>(null);
 
@@ -211,7 +214,11 @@ export function TerminalPanel({
       unlistenRef.current = null;
     }
     const id = sessionRef.current;
-    if (id != null) void closeSession(id);
+    if (id != null) {
+      void closeSession(id);
+      // Eski oturumun kaydı kalırsa sekmedeki işaret yeni bağlantıyı değil onu gösterir.
+      dropConn(id);
+    }
     sessionRef.current = null;
     commandRef.current = command;
     void connect();

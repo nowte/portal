@@ -6,11 +6,12 @@
 //! Burada tokio yok; kontroller blocking ([`ureq`] + [`std::net::TcpStream`]),
 //! çünkü dakikada bir atılan birkaç istek için async çalışma zamanı fazlalık.
 //!
-//! Ölçek tavanı: kontroller **sırayla** yapılır, yani zaman aşımına düşen bir
-//! monitör diğerlerini kendi `timeout_secs`'i kadar geciktirir. Onlarca monitör
-//! ya da uzun zaman aşımları gerekirse kontroller bir thread havuzuna dağıtılmalı.
+//! Kontroller döngüyü BLOKLAMAZ: sırası gelen her monitör kendi kısa ömürlü
+//! thread'inde yoklanır, sonucu [`Cmd::Done`] olarak geri gönderir. Aynı anda en
+//! fazla [`MAX_CONCURRENT`] kontrol koşar — zaman aşımına düşen bir monitör
+//! diğerlerini geciktirmez, ama yüz monitör yüz thread de açmaz.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::net::{TcpStream, ToSocketAddrs};
 use std::sync::mpsc::{self, Receiver, RecvTimeoutError, Sender};
 use std::thread;
@@ -21,6 +22,9 @@ use crate::uptime_log::{now_unix, CheckResult};
 
 /// Komut kanalı boşken thread'in uyanma sıklığı (sıra gelen monitör bu hassasiyetle bulunur).
 const TICK: Duration = Duration::from_millis(500);
+
+/// Aynı anda koşabilecek kontrol sayısı. Yavaş bir hedef en fazla bir yuva tutar.
+const MAX_CONCURRENT: usize = 4;
 
 /// İzleme thread'inden UI'ye olaylar.
 #[derive(Debug, Clone)]
@@ -35,6 +39,8 @@ enum Cmd {
     Reload(Vec<Monitor>),
     /// Bir monitörü hemen kontrol et (aralığı bekleme).
     CheckNow(MonitorId),
+    /// Bir kontrol thread'i bitti (yuvayı boşalt, sonucu yay).
+    Done(CheckResult),
     /// Thread'i durdur.
     Stop,
 }
@@ -52,7 +58,9 @@ impl UptimeService {
     pub fn start(monitors: Vec<Monitor>) -> Self {
         let (cmd_tx, cmd_rx) = mpsc::channel();
         let (event_tx, event_rx) = mpsc::channel();
-        let handle = thread::spawn(move || run(monitors, &cmd_rx, &event_tx));
+        // Kontrol thread'leri sonucu bu kanaldan geri yollar → döngü hemen uyanır.
+        let done_tx = cmd_tx.clone();
+        let handle = thread::spawn(move || run(monitors, &cmd_rx, &done_tx, &event_tx));
         Self {
             cmd_tx,
             event_rx,
@@ -86,10 +94,17 @@ impl Drop for UptimeService {
     }
 }
 
-/// İzleme döngüsü: sırası gelen monitörü kontrol eder, sonucu yollar.
-fn run(mut monitors: Vec<Monitor>, cmd_rx: &Receiver<Cmd>, event_tx: &Sender<UptimeEvent>) {
+/// İzleme döngüsü: sırası gelen monitörleri kontrole yollar, dönen sonucu yayar.
+fn run(
+    mut monitors: Vec<Monitor>,
+    cmd_rx: &Receiver<Cmd>,
+    done_tx: &Sender<Cmd>,
+    event_tx: &Sender<UptimeEvent>,
+) {
     // Monitör → bir sonraki kontrol zamanı. Listede olmayan kimlikler temizlenir.
     let mut due: HashMap<MonitorId, Instant> = HashMap::new();
+    // Şu an kontrolü koşan monitörler: ikinci kez yollanmasınlar.
+    let mut running: HashSet<MonitorId> = HashSet::new();
 
     loop {
         match cmd_rx.recv_timeout(TICK) {
@@ -101,26 +116,38 @@ fn run(mut monitors: Vec<Monitor>, cmd_rx: &Receiver<Cmd>, event_tx: &Sender<Upt
             Ok(Cmd::CheckNow(id)) => {
                 due.insert(id, Instant::now());
             }
+            Ok(Cmd::Done(result)) => {
+                running.remove(&result.monitor_id);
+                // Bir sonraki tur kontrolün BİTİŞİNDEN sayılır (yavaş hedef üst üste
+                // binmez). Aradan silinmiş monitörün kaydı geri gelmesin.
+                if let Some(m) = monitors.iter().find(|m| m.id == result.monitor_id) {
+                    let wait = Duration::from_secs(u64::from(m.interval_secs.max(1)));
+                    due.insert(m.id, Instant::now() + wait);
+                }
+                if event_tx.send(UptimeEvent::Checked(result)).is_err() {
+                    return; // UI gitti.
+                }
+            }
             Err(RecvTimeoutError::Timeout) => {}
         }
 
         let now = Instant::now();
         for monitor in &monitors {
-            if !monitor.enabled {
+            if running.len() >= MAX_CONCURRENT {
+                break;
+            }
+            if !monitor.enabled || running.contains(&monitor.id) {
                 continue;
             }
-            let at = *due.entry(monitor.id).or_insert(now);
-            if at > now {
+            if *due.entry(monitor.id).or_insert(now) > now {
                 continue;
             }
-            let result = check_once(monitor);
-            due.insert(
-                monitor.id,
-                Instant::now() + Duration::from_secs(u64::from(monitor.interval_secs.max(1))),
-            );
-            if event_tx.send(UptimeEvent::Checked(result)).is_err() {
-                return; // UI gitti.
-            }
+            running.insert(monitor.id);
+            let monitor = monitor.clone();
+            let done_tx = done_tx.clone();
+            thread::spawn(move || {
+                let _ = done_tx.send(Cmd::Done(check_once(&monitor)));
+            });
         }
     }
 }
@@ -298,6 +325,58 @@ mod tests {
         let result = seen.expect("başlangıçta bir kontrol yapılmalı");
         assert_eq!(result.monitor_id, id);
         assert!(result.up);
+    }
+
+    #[test]
+    fn slow_monitor_does_not_block_the_others() {
+        // Yavaş hedef: bağlantıyı KABUL eder ama yanıt vermez → istek zaman aşımına
+        // düşene kadar (10 sn) bir yuvayı tutar. Sıralı bir döngüde diğer dört
+        // monitör de bu kadar beklerdi.
+        let stalled = TcpListener::bind("127.0.0.1:0").unwrap();
+        let stalled_port = stalled.local_addr().unwrap().port();
+        thread::spawn(move || {
+            let _open: Vec<_> = stalled.incoming().take(1).filter_map(Result::ok).collect();
+            thread::sleep(Duration::from_secs(15));
+        });
+        let mut slow = Monitor::new(
+            "slow",
+            MonitorTarget::Http {
+                url: format!("http://127.0.0.1:{stalled_port}/"),
+                expect_status: None,
+            },
+        );
+        slow.timeout_secs = 10;
+
+        // Dört hızlı monitör: açık bir port, anında cevap.
+        let fast_listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let fast_port = fast_listener.local_addr().unwrap().port();
+        let mut monitors = vec![slow];
+        let fast_ids: Vec<MonitorId> = (0..4)
+            .map(|_| {
+                let m = tcp_monitor("127.0.0.1", fast_port);
+                let id = m.id;
+                monitors.push(m);
+                id
+            })
+            .collect();
+
+        let service = UptimeService::start(monitors);
+        let deadline = Instant::now() + Duration::from_secs(1);
+        let mut seen: Vec<MonitorId> = Vec::new();
+        while Instant::now() < deadline && seen.len() < fast_ids.len() {
+            if let Some(UptimeEvent::Checked(result)) = service.try_event() {
+                assert!(result.up, "hızlı monitör up olmalı: {:?}", result.error);
+                seen.push(result.monitor_id);
+            } else {
+                thread::sleep(Duration::from_millis(10));
+            }
+        }
+        // Dördü de 1 sn içinde sonuçlandı — yavaş olan kimseyi bloklamadı.
+        // (MAX_CONCURRENT 4 olduğu için dördüncüsü ancak bir yuva boşalınca gider:
+        // yuvanın geri dönüşü de burada ölçülür.)
+        for id in &fast_ids {
+            assert!(seen.contains(id), "1 sn içinde sonuçlanmayan monitör var");
+        }
     }
 
     #[test]
