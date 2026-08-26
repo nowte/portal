@@ -32,6 +32,67 @@ const NONCE_LEN: usize = 24;
 /// Argon2 salt uzunluğu (bayt).
 const SALT_LEN: usize = 16;
 
+/// Argon2id iş parametreleri. **Sarımın İÇİNDE saklanır** — yoksa parametreyi
+/// artırmak eski vault'ları açılamaz hâle getirirdi (KEK başka çıkardı).
+/// Eski dosyalarda alan yok; serde `legacy_kdf()` ile v0.9 değerlerini koyar.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+struct KdfParams {
+    /// Bellek maliyeti (KiB).
+    m_cost: u32,
+    /// Yineleme sayısı.
+    t_cost: u32,
+    /// Şerit (lane) sayısı.
+    p_cost: u32,
+}
+
+/// Yeni sarımların parametresi. **Ölçerek seçildi, tahminle değil.**
+///
+/// OWASP tabanı m=19 MiB · t=2 · p=1'dir; taban *asgari*dir, hedef değil.
+/// Unlock kullanıcı için oturumda bir kez ödenen bekleme, saldırgan içinse
+/// DENEDİĞİ HER PAROLA için ödenen maliyet — asimetri bizden yana, o yüzden
+/// kullanıcının fark etmeden bekleyebileceği kadar yükseğe çıkıyoruz.
+///
+/// Ölçüm (`bench_kdf_params`, `--release`, bu geliştirme makinesi):
+/// ```text
+/// OWASP tabanı  19 MiB t=2 ->  13 ms
+/// 128 MiB       t=2       -> 101 ms
+/// 256 MiB       t=3       -> 349 ms   <- seçilen
+/// 512 MiB       t=2       -> 557 ms
+/// ```
+/// Hedef 0.5–1 sn'ydi ve bu makine ortalamanın ÜSTÜNDE: 349 ms burada, tipik
+/// bir dizüstünde (2-3 kat yavaş) ~0.7–1 sn eder. 512 MiB burada bandın içinde
+/// görünüyordu ama yavaş makinede 1.7 sn'ye çıkardı — ve 512 MiB'lık ayırma
+/// düşük bellekli bir makinede tahsis hatası demektir; Rust'ta bu graceful bir
+/// hata değil, process abort'udur. 256 MiB hem bandı hem tavanı tutuyor.
+///
+/// Neden yineleme değil bellek: GPU/ASIC saldırganını yavaşlatan şey bellektir;
+/// 256 MiB bir kartın çekirdek başına ayırabileceğinden fazladır. `p` 1 kalır —
+/// `argon2` crate'i şeritleri tek iş parçacığında hesaplar, yani p>1 saldırganı
+/// değil yalnız kullanıcıyı yavaşlatır.
+///
+/// Değiştirmeden önce `bench_kdf_params`'ı hedef donanımda çalıştır. Değer
+/// artırılabilir: her sarım kendi parametresini taşır, eski vault'lar açılmaya
+/// devam eder (`legacy_kdf`).
+const CURRENT_KDF: KdfParams = KdfParams {
+    m_cost: 262_144,
+    t_cost: 3,
+    p_cost: 1,
+};
+
+/// v0.9 ve öncesinde yazılmış sarımların (parametresiz) örtük değerleri.
+fn legacy_kdf() -> KdfParams {
+    KdfParams {
+        m_cost: 19_456,
+        t_cost: 2,
+        p_cost: 1,
+    }
+}
+
+/// Dosyadan gelen parametrenin kabul edilebilir bellek tavanı (KiB) = 2 GiB.
+/// Sync klasöründen gelen bir dosya "m_cost = 64 GiB" yazıp Portal'ı
+/// kilitleyemesin diye: dosya girdisidir, doğrulanır.
+const MAX_M_COST: u32 = 2 * 1024 * 1024;
+
 /// Vault kripto hataları. Kullanıcıya görünür → İngilizce, kısa, çözülebilir.
 #[derive(Debug, thiserror::Error)]
 #[non_exhaustive]
@@ -134,6 +195,9 @@ struct Wrap {
     /// Argon2 salt'ı (parola/recovery için); keyring'de boş.
     #[serde(with = "b64", default, skip_serializing_if = "Vec::is_empty")]
     salt: Vec<u8>,
+    /// Bu sarımı üreten Argon2id parametreleri (keyring sarımında kullanılmaz).
+    #[serde(default = "legacy_kdf")]
+    kdf: KdfParams,
     #[serde(with = "b64")]
     nonce: Vec<u8>,
     /// Şifreli DEK (+ AEAD tag).
@@ -331,10 +395,17 @@ pub fn now_millis() -> u64 {
 // --- İç yardımcılar (saf) -------------------------------------------------
 
 /// Argon2id ile bir sırdan 32-baytlık KEK türetir.
-fn derive_kek(secret: &[u8], salt: &[u8]) -> CryptoResult<Zeroizing<[u8; KEY_LEN]>> {
+fn derive_kek(
+    secret: &[u8],
+    salt: &[u8],
+    kdf: KdfParams,
+) -> CryptoResult<Zeroizing<[u8; KEY_LEN]>> {
     use argon2::{Algorithm, Argon2, Params, Version};
-    // OWASP tabanı: m=19 MiB, t=2, p=1.
-    let params = Params::new(19_456, 2, 1, Some(KEY_LEN)).map_err(|_| CryptoError::Kdf)?;
+    if kdf.m_cost > MAX_M_COST {
+        return Err(CryptoError::Format);
+    }
+    let params = Params::new(kdf.m_cost, kdf.t_cost, kdf.p_cost, Some(KEY_LEN))
+        .map_err(|_| CryptoError::Kdf)?;
     let argon = Argon2::new(Algorithm::Argon2id, Version::V0x13, params);
     let mut out = Zeroizing::new([0u8; KEY_LEN]);
     argon
@@ -348,15 +419,15 @@ fn wrap_for(dek: &[u8; KEY_LEN], key: SealKey<'_>) -> CryptoResult<Wrap> {
     match key {
         SealKey::Password(pw) => {
             let salt = random_bytes::<SALT_LEN>()?;
-            let kek = derive_kek(pw.as_bytes(), &salt)?;
-            make_wrap(dek, &kek, WrapMethod::Password, salt.to_vec())
+            let kek = derive_kek(pw.as_bytes(), &salt, CURRENT_KDF)?;
+            make_wrap(dek, &kek, WrapMethod::Password, salt.to_vec(), CURRENT_KDF)
         }
         SealKey::Recovery(phrase) => {
             let salt = random_bytes::<SALT_LEN>()?;
-            let kek = derive_kek(phrase.as_bytes(), &salt)?;
-            make_wrap(dek, &kek, WrapMethod::Recovery, salt.to_vec())
+            let kek = derive_kek(phrase.as_bytes(), &salt, CURRENT_KDF)?;
+            make_wrap(dek, &kek, WrapMethod::Recovery, salt.to_vec(), CURRENT_KDF)
         }
-        SealKey::Keyring(kek) => make_wrap(dek, kek, WrapMethod::Keyring, Vec::new()),
+        SealKey::Keyring(kek) => make_wrap(dek, kek, WrapMethod::Keyring, Vec::new(), CURRENT_KDF),
     }
 }
 
@@ -375,12 +446,14 @@ fn make_wrap(
     kek: &[u8; KEY_LEN],
     method: WrapMethod,
     salt: Vec<u8>,
+    kdf: KdfParams,
 ) -> CryptoResult<Wrap> {
     let nonce = random_bytes::<NONCE_LEN>()?;
     let ct = aead_seal(kek, &nonce, dek, method_aad(method))?;
     Ok(Wrap {
         method,
         salt,
+        kdf,
         nonce: nonce.to_vec(),
         dek: ct,
     })
@@ -389,8 +462,8 @@ fn make_wrap(
 /// Bir sarımdan DEK'i çözer.
 fn unwrap_dek(wrap: &Wrap, key: OpenKey<'_>) -> CryptoResult<Zeroizing<[u8; KEY_LEN]>> {
     let kek: Zeroizing<[u8; KEY_LEN]> = match key {
-        OpenKey::Password(pw) => derive_kek(pw.as_bytes(), &wrap.salt)?,
-        OpenKey::Recovery(ph) => derive_kek(ph.as_bytes(), &wrap.salt)?,
+        OpenKey::Password(pw) => derive_kek(pw.as_bytes(), &wrap.salt, wrap.kdf)?,
+        OpenKey::Recovery(ph) => derive_kek(ph.as_bytes(), &wrap.salt, wrap.kdf)?,
         OpenKey::Keyring(k) => Zeroizing::new(*k),
     };
     let plain = Zeroizing::new(aead_open(
@@ -674,6 +747,130 @@ mod tests {
             open(&updated, OpenKey::Keyring(&key)).unwrap().as_slice(),
             PLAIN
         );
+    }
+
+    #[test]
+    fn legacy_vault_without_kdf_field_still_opens() {
+        // v0.9 zarfları `kdf` alanı TAŞIMAZ: parametreler koda gömülüydü. Burada
+        // gerçek bir v0.9 dosyası kurulur (legacy parametre + alan JSON'dan silinir)
+        // ve bugünkü kodun onu açtığı doğrulanır.
+        let dek = [11u8; KEY_LEN];
+        let salt = [2u8; SALT_LEN];
+        let kek = derive_kek(b"old-password", &salt, legacy_kdf()).unwrap();
+        let wrap = make_wrap(
+            &dek,
+            &kek,
+            WrapMethod::Password,
+            salt.to_vec(),
+            legacy_kdf(),
+        )
+        .unwrap();
+        let nonce = [3u8; NONCE_LEN];
+        let aad = header_aad(FORMAT_VERSION, 99, "old-laptop");
+        let payload = aead_seal(&dek, &nonce, PLAIN, &aad).unwrap();
+        let sealed = Sealed {
+            version: FORMAT_VERSION,
+            updated_at: 99,
+            device_label: "old-laptop".to_string(),
+            wraps: vec![wrap],
+            payload_nonce: nonce.to_vec(),
+            payload,
+        };
+
+        // Alanı sil → dosya tam olarak v0.9'un yazdığı şekle döner.
+        let mut doc = serde_json::to_value(&sealed).unwrap();
+        doc["wraps"][0]
+            .as_object_mut()
+            .unwrap()
+            .remove("kdf")
+            .expect("test kurulumu: kdf alanı yazılmış olmalı");
+        let raw = serde_json::to_vec(&doc).unwrap();
+
+        let opened = open(&raw, OpenKey::Password("old-password")).unwrap();
+        assert_eq!(opened.as_slice(), PLAIN);
+    }
+
+    #[test]
+    fn absurd_kdf_params_from_file_are_rejected() {
+        // Dosya bir sync klasöründen gelebilir: 64 GiB'lık bir m_cost makineyi
+        // kilitlemeden reddedilmeli.
+        let huge = KdfParams {
+            m_cost: MAX_M_COST + 1,
+            t_cost: 1,
+            p_cost: 1,
+        };
+        assert!(matches!(
+            derive_kek(b"pw", &[0u8; SALT_LEN], huge).unwrap_err(),
+            CryptoError::Format
+        ));
+    }
+
+    /// Argon2 parametre seçiminin ÖLÇÜM aracı. Varsayılan olarak çalışmaz
+    /// (yavaş + makineye bağlı). Parametreyi değiştirmeden önce hedef donanımda:
+    ///
+    /// ```text
+    /// cargo test --release -p portal-core -- --ignored --nocapture bench_kdf
+    /// ```
+    ///
+    /// Hedef: `CURRENT_KDF` satırı 0.5–1 sn aralığında olmalı.
+    #[test]
+    #[ignore = "ölçüm aracı: --release + --ignored ile elle çalıştırılır"]
+    fn bench_kdf_params() {
+        let candidates = [
+            ("OWASP floor ", legacy_kdf()),
+            (
+                "64 MiB  t=2 ",
+                KdfParams {
+                    m_cost: 65_536,
+                    t_cost: 2,
+                    p_cost: 1,
+                },
+            ),
+            (
+                "128 MiB t=2 ",
+                KdfParams {
+                    m_cost: 131_072,
+                    t_cost: 2,
+                    p_cost: 1,
+                },
+            ),
+            (
+                "256 MiB t=2 ",
+                KdfParams {
+                    m_cost: 262_144,
+                    t_cost: 2,
+                    p_cost: 1,
+                },
+            ),
+            (
+                "256 MiB t=3 ",
+                KdfParams {
+                    m_cost: 262_144,
+                    t_cost: 3,
+                    p_cost: 1,
+                },
+            ),
+            (
+                "512 MiB t=2 ",
+                KdfParams {
+                    m_cost: 524_288,
+                    t_cost: 2,
+                    p_cost: 1,
+                },
+            ),
+            ("CURRENT_KDF ", CURRENT_KDF),
+        ];
+        for (label, kdf) in candidates {
+            let start = std::time::Instant::now();
+            derive_kek(b"a fairly typical password", &[7u8; SALT_LEN], kdf).unwrap();
+            println!(
+                "{label} m={:>7} KiB t={} p={} -> {:>7.0} ms",
+                kdf.m_cost,
+                kdf.t_cost,
+                kdf.p_cost,
+                start.elapsed().as_secs_f64() * 1000.0
+            );
+        }
     }
 
     #[test]

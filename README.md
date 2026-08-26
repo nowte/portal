@@ -7,7 +7,7 @@
 <br>
 
 <p>
-  <img alt="status: pre-1.0" src="https://img.shields.io/badge/status-pre--1.0-8f8f8f?style=flat-square">
+  <img alt="version 1.0.0" src="https://img.shields.io/badge/version-1.0.0-8f8f8f?style=flat-square">
   <img alt="platform: windows" src="https://img.shields.io/badge/platform-windows-8f8f8f?style=flat-square">
   <img alt="built with rust" src="https://img.shields.io/badge/built%20with-rust%20%2B%20tauri-8f8f8f?style=flat-square">
   <img alt="license" src="https://img.shields.io/badge/license-GPL--3.0-8f8f8f?style=flat-square">
@@ -49,6 +49,8 @@ explained.
 - Fewer protocols than Termix. No RDP, VNC or Telnet yet.
 - Uptime checks only run while the app is running. A tray option keeps it alive after
   you close the window; a true background service is out of scope.
+- **The installer is not code-signed yet.** Windows SmartScreen will call the
+  publisher unknown. See [Installation](#installation) for what to check instead.
 
 We would rather you read that here than discover it after installing.
 
@@ -117,8 +119,8 @@ jump hosts / ProxyJump, and agent forwarding.
 </tr>
 </table>
 
-<sub>Sample data. Terminal, Files and Monitor need a real server, so their
-screenshots come with the first release.</sub>
+<sub>Sample data — the screenshots are taken against a mock dataset on purpose, so
+no real host name, address or command ends up in this repository.</sub>
 
 ---
 
@@ -139,8 +141,54 @@ server.
 
 ## Installation
 
-> **There is no installer yet.** Portal is pre-1.0 and the signed `.msi` ships with
-> v1.0. Until then, build it yourself — it takes about five minutes.
+### Download
+
+**[⬇ Portal 1.0.0 for Windows (x64)](https://github.com/nowte/portal/releases/latest)**
+— take `Portal_1.0.0_x64-setup.exe`. The `.msi` next to it is the same app, for
+`msiexec` and managed deployment.
+
+<details>
+<summary><b>Windows will warn you about an unknown publisher. Here is why, and what to check instead.</b></summary>
+
+<br>
+
+Portal is not code-signed. A signing certificate costs a few hundred dollars a year
+and this project has no revenue, so v1.0 ships unsigned and SmartScreen says
+"Windows protected your PC". Click **More info → Run anyway** if you decide to trust
+it — but do the check first:
+
+```console
+$ Get-FileHash .\Portal_1.0.0_x64-setup.exe -Algorithm SHA256
+```
+
+Compare that against the hash published in the
+[release notes](https://github.com/nowte/portal/releases/latest). If they match,
+the file you have is the file that was built. If you would rather trust nothing at
+all, build from source below — the output is the same application.
+
+</details>
+
+### First connection
+
+1. **Open Portal and make a profile.** The profile is what encrypts everything
+   Portal stores about your servers. Give it a **password** — nobody can reset that
+   for you, so Portal hands you a **recovery phrase**; write it down on paper now.
+   The password is optional: skip it and the profile is still encrypted, but with a
+   key held in this machine's keychain, which is only as safe as the machine.
+2. **Add a server.** Press <kbd>Shift</kbd> <kbd>Shift</kbd>, type *Add a server*,
+   and fill in the address and username. Or click **Hosts → +**.
+3. **Connect.** Double-click the host. Portal asks for the password or key — that
+   is asked at connect time, never stored unless you tick *Remember*.
+4. **Trust the key.** The first time, Portal shows the server's fingerprint and
+   explains what it is before you accept. If that fingerprint ever changes later,
+   Portal refuses to connect and tells you loudly.
+5. You now have a real shell. **Files**, **Monitor** and **Uptime** are tabs on the
+   same server page.
+
+New to SSH? The **Guide** panel explains keys, fingerprints, tunnels and jump hosts
+in plain language, and lists every keyboard shortcut.
+
+### Build from source
 
 **Prerequisites**
 
@@ -164,7 +212,8 @@ $ npm run tauri dev
 $ npm run tauri build
 ```
 
-The bundle lands in `crates/portal-gui/src-tauri/target/release/bundle/`.
+The bundle lands in `crates/portal-gui/src-tauri/target/release/bundle/` — an
+`.msi` and an NSIS `-setup.exe`, the same two files as the release above.
 
 **Check the workspace**
 
@@ -178,30 +227,35 @@ $ cargo test --workspace
 
 ## Development status
 
-Portal is **pre-1.0**, written by one person, in the open. Here is an honest picture
+**v1.0 is out.** It is written by one person, in the open. Here is an honest picture
 rather than a roadmap full of promises.
 
 **Where it is right now.** The application works. You can add a host, connect, get a
 real shell, move files both ways, watch the machine, and watch your sites from the
 outside — all of it against real servers, with everything sensitive encrypted at
-rest. The domain core is around 7,500 lines of Rust with 117 tests, and the interface
-is a thin shell over it.
+rest. The domain core is about 8,600 lines of Rust with 140 tests; the interface is
+roughly 10,000 lines of TypeScript over a 55-command bridge, and holds no business
+logic of its own.
 
-**What is being worked on.** Depth, not new features. Before v1.0 every half-finished
-edge gets closed: retry paths on every panel that can fail, search in the terminal,
-multi-select in the file browser, concurrent uptime checks, a full keyboard map, and
-an accessibility pass. The rule for this stretch is simple — **a half-built feature is
-worse than a missing one**, and nothing ships to a launch page with a dead button on it.
+**What v1.0 spent its last months on.** Depth, not new features. Every half-finished
+edge got closed before release: a retry path on every panel that can fail, search and
+reconnect in the terminal, multi-select and conflict handling in the file browser,
+concurrent uptime checks with certificate expiry, a cancel button on every long
+operation, a full keyboard map, and an accessibility pass. The rule was simple — **a
+half-built feature is worse than a missing one**, and nothing shipped with a dead
+button on it.
 
 **What comes after.**
 
 | Version | Focus |
 | --- | --- |
-| **v1.0** | Depth pass · security hardening · signed `.msi` for Windows |
+| **v1.0** | ✅ **Shipped.** Depth pass · security hardening · Windows installer |
 | v1.1 | Advanced SSH in the GUI (tunnels, jump hosts, key manager, `~/.ssh/config` import) and **Docker management** |
 | v1.2 | **RDP / VNC** — more than one protocol |
 | v1.5 | **macOS and Linux** |
 | v2.0 | **AI assistant** — local model by default, your own API key optional, fully removable, and never allowed to run a command without showing you exactly what it will break |
+
+Code signing is on that list too, unscheduled — it waits on money rather than work.
 
 **Pace.** This is a solo project with no company behind it and no funding round to
 spend. It moves in evenings and weekends. Issues get read; large ideas may sit for a
@@ -225,15 +279,30 @@ Portal makes exactly three kinds of outbound connection, and you cause all three
 | HTTP(S) / TCP | An uptime monitor runs | The target **you** added |
 | *(planned)* AI provider | Only if you turn AI on **and** choose a cloud model instead of a local one | That provider |
 
-That is the whole list. No update pings, no crash reporting by default, no analytics,
+That is the whole list for the running application. **The installer** has one more:
+if your machine has no WebView2 runtime (Windows 11 ships with it; some Windows 10
+installs do not), setup downloads it from Microsoft once. Portal itself never does.
+
+No update pings, no crash reporting by default, no analytics,
 no license check, no account. Telemetry exists as an off-by-default opt-in and never
 includes host names, addresses, commands or file names.
 
 Two things we tell you rather than hide:
 
-1. The encrypted vault's file header stores a device label and a timestamp in **plain
-   text**. The contents are encrypted; that metadata is not. If you sync the vault
-   into a shared folder, that is what a reader learns.
+1. **The vault file's header is readable without your password.** Everything you put
+   in the vault — hosts, addresses, usernames, keys, passwords — is encrypted. The
+   header wrapped around it is not, and anyone holding the file can read:
+
+   - your computer's name (Portal uses it as the device label),
+   - when the vault was last written,
+   - which ways it can be unlocked — password, recovery phrase, this machine's
+     keychain — but none of those secrets,
+   - roughly how much you store in it, from the file size.
+
+   The header is in the clear on purpose: it is how sync decides which of two copies
+   is newer without unlocking either one. It is not unprotected — editing it makes the
+   vault refuse to open. But if you sync into a folder someone else can read, the four
+   points above are what they learn.
 2. Uptime checks stop when the app is closed. The tray option narrows that gap; it
    does not remove it.
 

@@ -1,7 +1,7 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "Portal",
-  "version": "0.9.0",
+  "version": "1.0.0",
   "identifier": "co.nowtes.portal",
   "build": {
     "frontendDist": "../dist",
@@ -30,13 +30,24 @@
   },
   "bundle": {
     "active": true,
-    "targets": "all",
+    "targets": ["msi", "nsis"],
+    "publisher": "nowte",
+    "homepage": "https://github.com/nowte/portal",
+    "copyright": "Copyright (c) 2026 nowte. Licensed under the GNU GPL v3.0 or later.",
+    "license": "GPL-3.0-or-later",
+    "category": "DeveloperTool",
+    "shortDescription": "SSH and VPS manager with a local encrypted vault.",
+    "longDescription": "Portal manages your servers over SSH: terminal, SFTP file transfer, live machine metrics and external uptime checks. Hosts, keys and passwords live in an encrypted vault on your own disk. No account, no server we run, no telemetry.",
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",
       "icons/128x128@2x.png",
       "icons/icon.icns",
       "icons/icon.ico"
-    ]
+    ],
+    "windows": {
+      "digestAlgorithm": "sha256",
+      "timestampUrl": "http://timestamp.digicert.com"
+    }
   }
 }
