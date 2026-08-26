@@ -202,6 +202,16 @@ export const listLocal = (path: string): Promise<LocalListing> =>
   invoke<LocalListing>("list_local", { path });
 export const localHome = (): Promise<string> => invoke<string>("local_home");
 
+// Fuzzy filtre — eşleştirme çekirdekte (portal_core::fuzzy). Uyanların indeksleri
+// ÖZGÜN sırada döner: sıralamayı kullanıcı seçer, arama yalnız eler.
+export const fuzzyFilter = (query: string, items: string[]): Promise<number[]> =>
+  invoke<number[]>("fuzzy_filter", { query, items });
+
+// Transfer çakışmasında önerilen adlar ("notes.txt" → "notes (1).txt"). Adlandırma
+// çekirdekte; üretilenler birbirine de çarpmaz.
+export const freeNames = (taken: string[], wanted: string[]): Promise<string[]> =>
+  invoke<string[]>("free_names", { taken, wanted });
+
 // ── Oturum olay akışları (portal://ssh|sftp|metrics/{id}) ──
 export const onShell = (id: number, cb: (m: ShellMsg) => void): Promise<UnlistenFn> =>
   listen<ShellMsg>(`portal://ssh/${id}`, (e) => cb(e.payload));

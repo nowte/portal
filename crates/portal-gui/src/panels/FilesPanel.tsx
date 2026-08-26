@@ -1,20 +1,31 @@
 // Files — iki panel (This PC ⇄ host, SFTP). Sürükle-bırak transfer + alt transfer
-// kuyruğu (ilerleme/iptal). SftpEvent köprüsü: portal://sftp/{id}.
+// kuyruğu (ilerleme/iptal/tekrar). SftpEvent köprüsü: portal://sftp/{id}.
 //
 // Uzak gezinme home'a görelidir (bağlantı cwd'si login diziniyle sabit) → "foo/bar"
 // gibi göreli yollar her read_dir'de home'a çözülür; böylece realpath gerekmez.
+//
+// P9 (derinlik): çoklu seçim (Shift aralık / Ctrl tek tek) · gizli dosya anahtarı ·
+// sütuna göre sıralama · panel içi filtre (çekirdeğin fuzzy'si) · başarısız
+// transferde "Try again" · hedefte aynı ad varsa Overwrite/Skip/Rename sorusu.
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import {
   ArrowLeft,
+  Check,
+  ChevronDown,
   ChevronRight,
+  ChevronUp,
   Download,
+  Eye,
+  EyeOff,
   FileText,
   Folder,
   FolderPlus,
   HardDrive,
   Pencil,
+  RotateCw,
+  Search,
   Server,
   Trash2,
   Upload,
@@ -32,6 +43,8 @@ import {
   closeSession,
   connectFiles,
   forgetCreds,
+  freeNames,
+  fuzzyFilter,
   hostIsCached,
   hostKeyDecision,
   listLocal,
@@ -51,6 +64,9 @@ interface Transfer {
   id: number;
   kind: "upload" | "download";
   name: string;
+  // Kaynak + hedef, çekirdekten geldiği gibi: "Try again" aynı transferi kurar.
+  local: string;
+  remote: string;
   total: number;
   transferred: number;
   status: "active" | "done" | "failed" | "cancelled";
@@ -64,12 +80,68 @@ interface DragItem {
   isDir: boolean;
 }
 
+/** Bir transfer isteği. `src` yerelde tam yol, uzakta home-göreli yoldur;
+ *  `name` hedef dizinde alacağı addır (çakışmada değişebilir). */
+interface Job {
+  kind: "upload" | "download";
+  src: string;
+  name: string;
+}
+
+type SortKey = "name" | "size" | "date";
+
+/** Bir panelin görünüm durumu — iki panel birbirinden bağımsız ayarlanır. */
+interface View {
+  sort: SortKey;
+  desc: boolean;
+  hidden: boolean;
+  filter: string;
+  finding: boolean;
+}
+const VIEW0: View = { sort: "name", desc: false, hidden: false, filter: "", finding: false };
+
+/** Sıralama/filtreleme için iki panelin ortak satır biçimi. */
+interface Row {
+  name: string;
+  isDir: boolean;
+  size: number;
+  modified: number | null;
+  hidden?: boolean;
+}
+
 function human(n: number): string {
   if (n < 1024) return `${n} B`;
   if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`;
   if (n < 1024 * 1024 * 1024) return `${(n / 1024 / 1024).toFixed(1)} MB`;
   return `${(n / 1024 / 1024 / 1024).toFixed(1)} GB`;
 }
+// Locale SABİT (en-GB): `undefined` makinenin diline döner ve bu makinede tarih
+// Türkçe çıkıyordu — arayüzün geri kalanı İngilizce (CLAUDE.md §9 "Genel").
+function when(secs: number | null | undefined): string {
+  if (!secs) return "—";
+  const d = new Date(secs * 1000);
+  return `${d.toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" })} ${d
+    .toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" })}`;
+}
+/** Uzak tarafta gizlilik yalnız addan okunur (POSIX noktası); yerel tarafta
+ *  çekirdek Windows'un HIDDEN özniteliğini de katar. */
+function isHidden(en: Row): boolean {
+  return en.hidden ?? en.name.startsWith(".");
+}
+/** Klasörler HER ZAMAN önce (sıra tersine çevrilse de) — dizin ağacında gezinme
+ *  sırası, sıralama tercihine kurban edilmez. */
+function sortRows<T extends Row>(rows: T[], view: View): T[] {
+  const dir = view.desc ? -1 : 1;
+  return rows.slice().sort((a, b) => {
+    if (a.isDir !== b.isDir) return a.isDir ? -1 : 1;
+    let d = 0;
+    if (view.sort === "size") d = a.size - b.size;
+    else if (view.sort === "date") d = (a.modified ?? 0) - (b.modified ?? 0);
+    if (d === 0) d = a.name.localeCompare(b.name, "en");
+    return d * dir;
+  });
+}
+
 // Uzak yol iki kipte olabilir: "" veya "foo/bar" = HOME-göreli · "/var/www" = MUTLAK.
 // Çekirdek ikisini de olduğu gibi `read_dir`'e verir; ayrım yalnız burada kurulur.
 function isAbs(p: string): boolean {
@@ -123,6 +195,120 @@ function crumbs(path: string): { name: string; path: string }[] {
   return out;
 }
 
+/** Görünen satırlar: gizlileri ele → çekirdeğin fuzzy'siyle filtrele → sırala.
+ *  İki panel de bunu kullanır (tek gövde; ikinci bir arama uygulaması yok). */
+function useRows<T extends Row>(entries: T[], view: View): T[] {
+  const base = useMemo(
+    () => entries.filter((e) => view.hidden || !isHidden(e)),
+    [entries, view.hidden],
+  );
+  // Eşleşen ADLAR (indeks değil): filtre yanıtı geldiğinde liste değişmiş olabilir,
+  // indeks o an başka bir dosyayı gösterirdi.
+  const [hits, setHits] = useState<Set<string> | null>(null);
+  const q = view.filter.trim();
+  useEffect(() => {
+    if (!q) {
+      setHits(null);
+      return;
+    }
+    let alive = true;
+    void fuzzyFilter(
+      q,
+      base.map((e) => e.name),
+    ).then((ix) => {
+      if (alive) setHits(new Set(ix.map((i) => base[i]?.name).filter(Boolean)));
+    });
+    return () => {
+      alive = false;
+    };
+  }, [q, base]);
+  return useMemo(
+    () => sortRows(q && hits ? base.filter((e) => hits.has(e.name)) : base, view),
+    [base, hits, q, view],
+  );
+}
+
+/** Sütun başlığı = sıralama kontrolü. Ayrı bir menü yok: sıralanan sütunun
+ *  başlığında yön oku durur. Kolonlar satırdakilerle aynı genişlikte. */
+function SortBar({ view, onView }: { view: View; onView: (v: View) => void }) {
+  const hit = (key: SortKey) =>
+    onView(view.sort === key ? { ...view, desc: !view.desc } : { ...view, sort: key, desc: false });
+  const arrow = (key: SortKey) =>
+    view.sort !== key ? null : view.desc ? (
+      <ChevronDown size={16} strokeWidth={1.75} />
+    ) : (
+      <ChevronUp size={16} strokeWidth={1.75} />
+    );
+  return (
+    <div className="ftools">
+      <span className="ftools-pad" />
+      <button
+        className={"fsort fsort-n" + (view.sort === "name" ? " on" : "")}
+        onClick={() => hit("name")}
+        title="Sort by name"
+      >
+        Name {arrow("name")}
+      </button>
+      <button
+        className={"fsort fsort-s" + (view.sort === "size" ? " on" : "")}
+        onClick={() => hit("size")}
+        title="Sort by size"
+      >
+        Size {arrow("size")}
+      </button>
+      <button
+        className={"fsort fsort-d" + (view.sort === "date" ? " on" : "")}
+        onClick={() => hit("date")}
+        title="Sort by date modified"
+      >
+        Modified {arrow("date")}
+      </button>
+    </div>
+  );
+}
+
+/** Panel içi filtre şeridi — yalnız açıkken render edilir (terminalin Ctrl+F
+ *  şeridiyle aynı fikir: arama kalıcı bir kutu değil, çağrılan bir araç). */
+function FindBar({
+  view,
+  onView,
+  shown,
+  total,
+}: {
+  view: View;
+  onView: (v: View) => void;
+  shown: number;
+  total: number;
+}) {
+  return (
+    <div className="fwrap ffind">
+      <Search size={16} strokeWidth={1.75} />
+      <input
+        autoFocus
+        value={view.filter}
+        spellCheck={false}
+        placeholder="Filter this folder"
+        onChange={(e) => onView({ ...view, filter: e.target.value })}
+        onKeyDown={(e) => {
+          if (e.key === "Escape") onView({ ...view, filter: "", finding: false });
+        }}
+      />
+      {view.filter.trim() && (
+        <span className="ffind-n mono">
+          {shown}/{total}
+        </span>
+      )}
+      <button
+        className="tool"
+        title="Close filter"
+        onClick={() => onView({ ...view, filter: "", finding: false })}
+      >
+        <X size={16} strokeWidth={1.75} />
+      </button>
+    </div>
+  );
+}
+
 // deferConnect: bkz. TerminalPanel — diskten geri yüklenen pane kendiliğinden bağlanmaz.
 export function FilesPanel({
   hostId,
@@ -152,7 +338,8 @@ export function FilesPanel({
 
   const [local, setLocal] = useState<LocalListing | null>(null);
   const [localErr, setLocalErr] = useState<string | null>(null);
-  const [localSel, setLocalSel] = useState<string | null>(null);
+  // Seçim ÇOKLU: yerelde tam yol, uzakta ad (o dizindeki benzersiz anahtar).
+  const [localSel, setLocalSel] = useState<string[]>([]);
   // "This PC" yol çubuğu düzenlenebilir (C:\Users\... elle yazılabilir).
   const [localInput, setLocalInput] = useState("");
   const [remotePath, setRemotePath] = useState("");
@@ -161,8 +348,13 @@ export function FilesPanel({
   const [remoteEdit, setRemoteEdit] = useState<string | null>(null);
   const [remote, setRemote] = useState<RemoteEntry[]>([]);
   const [remoteErr, setRemoteErr] = useState<string | null>(null);
-  const [remoteSel, setRemoteSel] = useState<string | null>(null);
+  const [remoteSel, setRemoteSel] = useState<string[]>([]);
   const [transfers, setTransfers] = useState<Transfer[]>([]);
+  const [localView, setLocalView] = useState<View>(VIEW0);
+  const [remoteView, setRemoteView] = useState<View>(VIEW0);
+  // Shift aralığının çıpası (son "düz" tıklama).
+  const localAnchor = useRef<string | null>(null);
+  const remoteAnchor = useRef<string | null>(null);
   // Sürükleme nereden başladı: hedef göstergesi KARŞI panelde çıksın. Kaynak
   // panelin kendi üstünde "Drop to transfer" yazması yanıltıcıydı — oraya
   // bırakmak hiçbir şey yapmıyor (kullanıcı bulgusu).
@@ -183,7 +375,19 @@ export function FilesPanel({
     value: string;
     target?: RemoteEntry;
   } | null>(null);
-  const [confirmDel, setConfirmDel] = useState<RemoteEntry | null>(null);
+  const [confirmDel, setConfirmDel] = useState<RemoteEntry[] | null>(null);
+  // Hedefte aynı ad var: çakışma kuyruğu + her biri için çekirdeğin önerdiği
+  // serbest ad (`suggest`) + kullanıcının o an düzenlediği ad + "hepsine uygula".
+  const [conflict, setConflict] = useState<{
+    queue: Job[];
+    suggest: string[];
+    i: number;
+    rename: string;
+  } | null>(null);
+  const [applyAll, setApplyAll] = useState(false);
+
+  const localRows = useRows(local?.entries ?? [], localView);
+  const remoteRows = useRows(remote, remoteView);
 
   useEffect(() => setGuideTopic("files"), []);
 
@@ -269,6 +473,8 @@ export function FilesPanel({
                 id: m.id,
                 kind: m.kind,
                 name: m.name,
+                local: m.local,
+                remote: m.remote,
                 total: m.total,
                 transferred: 0,
                 status: "active",
@@ -349,13 +555,13 @@ export function FilesPanel({
   const openRemoteDir = (name: string) => {
     const next = remoteInto(remotePath, name);
     setRemotePath(next);
-    setRemoteSel(null);
+    setRemoteSel([]);
     loadRemote(next);
   };
   const remoteGoUp = () => {
     const next = remoteUp(remotePath);
     setRemotePath(next);
-    setRemoteSel(null);
+    setRemoteSel([]);
     loadRemote(next);
   };
   // Breadcrumb'tan bir dizine atla (home-göreli).
@@ -374,43 +580,159 @@ export function FilesPanel({
 
   const goRemote = (path: string) => {
     setRemotePath(path);
-    setRemoteSel(null);
+    setRemoteSel([]);
     loadRemote(path);
   };
 
-  // ── transfer aksiyonları (düğme tabanlı; sürükle-bırak ayrıca çalışır) ──
-  // Upload: native seçici → seçilen dosyaları GEÇERLİ uzak dizine yükle.
-  const uploadPick = async () => {
+  // ── seçim ─────────────────────────────────────────────────────────────────
+  // Shift = çıpadan buraya aralık · Ctrl = tek tek ekle/çıkar · düz tık = yalnız bu.
+  // Aralık GÖRÜNEN sıraya göre alınır (sıralama/filtre neyse o) — gizli ya da
+  // elenmiş bir satır aralığa sızmaz.
+  const pick = (
+    e: React.MouseEvent,
+    key: string,
+    keys: string[],
+    sel: string[],
+    setSel: (v: string[]) => void,
+    anchor: React.MutableRefObject<string | null>,
+  ) => {
+    if (e.shiftKey && anchor.current) {
+      const a = keys.indexOf(anchor.current);
+      const b = keys.indexOf(key);
+      if (a >= 0 && b >= 0) {
+        setSel(keys.slice(Math.min(a, b), Math.max(a, b) + 1));
+        return;
+      }
+    }
+    if (e.ctrlKey || e.metaKey) {
+      setSel(sel.includes(key) ? sel.filter((k) => k !== key) : [...sel, key]);
+      anchor.current = key;
+      return;
+    }
+    setSel([key]);
+    anchor.current = key;
+  };
+
+  const selLocal = localRows.filter((e) => localSel.includes(e.path));
+  const selRemote = remoteRows.filter((e) => remoteSel.includes(e.name));
+  const selLocalFiles = selLocal.filter((e) => !e.isDir);
+  const selRemoteFiles = selRemote.filter((e) => !e.isDir);
+
+  // ── transfer aksiyonları ──────────────────────────────────────────────────
+  // Hedef dizin HER ZAMAN o an açık olan dizindir → çakışma kontrolü elimizdeki
+  // listeden yapılır, ek bir tur gerekmez.
+  const takenFor = useCallback(
+    (kind: "upload" | "download"): Set<string> =>
+      kind === "upload"
+        ? new Set(remote.map((e) => e.name))
+        : new Set((local?.entries ?? []).map((e) => e.name)),
+    [remote, local],
+  );
+
+  /** Bir işi çekirdeğe verir; `as` hedefte alacağı addır. */
+  const run = useCallback((job: Job, as: string) => {
     const id = sessionRef.current;
     if (id == null) return;
+    if (job.kind === "upload") {
+      void sftpUpload(id, job.src, remoteInto(remotePathRef.current, as));
+    } else {
+      void sftpDownload(id, job.src, localPathRef.current + localSep(localPathRef.current) + as);
+    }
+  }, []);
+
+  /** Çakışmayanları hemen başlatır, çakışanları soru kuyruğuna alır. */
+  const dispatch = useCallback(
+    (jobs: Job[]) => {
+      const id = sessionRef.current;
+      if (id == null) {
+        setMessage("Not connected yet — connect this Files panel before transferring.");
+        return;
+      }
+      if (!jobs.length) return;
+      setMessage("");
+      const clash: Job[] = [];
+      for (const j of jobs) {
+        if (takenFor(j.kind).has(j.name)) clash.push(j);
+        else run(j, j.name);
+      }
+      if (clash.length) {
+        setApplyAll(false);
+        // Öneriler TEK çağrıda gelir ve birbirine de çarpmaz — aynı ada düşen iki
+        // dosya aynı yeni adı almaz.
+        void freeNames(
+          [...takenFor(clash[0].kind)],
+          clash.map((j) => j.name),
+        ).then((suggest) =>
+          setConflict({ queue: clash, suggest, i: 0, rename: suggest[0] ?? clash[0].name }),
+        );
+      }
+    },
+    [run, takenFor],
+  );
+
+  /** Çakışma cevabı. "Apply to all" ile kalan çakışmalar da aynı yolu izler;
+   *  Rename'de kalanlara otomatik benzersiz ad verilir (her biri elle
+   *  yazılamayacağı için — kullanıcı yine de tek tek gidebilir). */
+  const resolveConflict = (choice: "overwrite" | "skip" | "rename") => {
+    if (!conflict) return;
+    const { queue, suggest, i, rename } = conflict;
+    const apply = (at: number) => {
+      if (choice === "skip") return;
+      const job = queue[at];
+      const as =
+        choice === "overwrite"
+          ? job.name
+          : at === i
+            ? rename.trim() || suggest[at] || job.name
+            : suggest[at] || job.name;
+      run(job, as);
+    };
+    if (applyAll) {
+      for (let k = i; k < queue.length; k += 1) apply(k);
+      setConflict(null);
+      return;
+    }
+    apply(i);
+    const next = i + 1;
+    if (next < queue.length) {
+      setConflict({ queue, suggest, i: next, rename: suggest[next] ?? queue[next].name });
+    } else {
+      setConflict(null);
+    }
+  };
+
+  // Upload: native seçici → seçilen dosyaları GEÇERLİ uzak dizine yükle.
+  const uploadPick = async () => {
+    if (sessionRef.current == null) return;
     const sel = await openDialog({ multiple: true, title: "Choose files to upload" });
     if (!sel) return;
     const paths = Array.isArray(sel) ? sel : [sel];
-    for (const p of paths) {
-      void sftpUpload(id, p, remoteInto(remotePathRef.current, baseName(p)));
+    dispatch(paths.map((p) => ({ kind: "upload" as const, src: p, name: baseName(p) })));
+  };
+  // Seçili yerel dosyaları uzağa gönder (orta ▲).
+  const uploadSelected = () =>
+    dispatch(selLocalFiles.map((e) => ({ kind: "upload" as const, src: e.path, name: e.name })));
+  // Seçili uzak dosyaları yerele indir (orta ▼) — geçerli "This PC" dizinine.
+  const downloadSelected = () =>
+    dispatch(
+      selRemoteFiles.map((e) => ({
+        kind: "download" as const,
+        src: remoteInto(remotePath, e.name),
+        name: e.name,
+      })),
+    );
+
+  /** Başarısız transferi AYNI argümanlarla yeniden kurar. Eski satır düşer —
+   *  çekirdek yeni bir kimlikle yeni bir satır açacak. */
+  const retryTransfer = (t: Transfer) => {
+    const id = sessionRef.current;
+    if (id == null) {
+      setMessage("Not connected — reconnect this Files panel first.");
+      return;
     }
-  };
-  // Seçili yerel dosyayı uzağa gönder (orta ▲).
-  const uploadSelected = () => {
-    const id = sessionRef.current;
-    const en = local?.entries.find((e) => e.path === localSel);
-    if (id == null || !en || en.isDir) return;
-    void sftpUpload(id, en.path, remoteInto(remotePathRef.current, en.name));
-  };
-  // Seçili uzak dosyayı yerele indir (orta ▼) — geçerli "This PC" dizinine.
-  const downloadSelected = () => {
-    const id = sessionRef.current;
-    const en = remote.find((e) => e.name === remoteSel);
-    if (id == null || !en || en.isDir) return;
-    const dest = localPathRef.current + localSep(localPathRef.current) + en.name;
-    void sftpDownload(id, remoteInto(remotePath, en.name), dest);
-  };
-  // Bir uzak ögeyi (menüden) indir.
-  const downloadEntry = (en: RemoteEntry) => {
-    const id = sessionRef.current;
-    if (id == null || en.isDir) return;
-    const dest = localPathRef.current + localSep(localPathRef.current) + en.name;
-    void sftpDownload(id, remoteInto(remotePath, en.name), dest);
+    setTransfers((ts) => ts.filter((x) => x.id !== t.id));
+    if (t.kind === "upload") void sftpUpload(id, t.local, t.remote);
+    else void sftpDownload(id, t.remote, t.local);
   };
 
   // ── uzak dosya işlemleri (mkdir/rename/delete) ──
@@ -433,8 +755,11 @@ export function FilesPanel({
   const doDelete = () => {
     const id = sessionRef.current;
     if (id == null || !confirmDel) return;
-    void sftpRemove(id, remoteInto(remotePath, confirmDel.name), confirmDel.isDir);
-    if (remoteSel === confirmDel.name) setRemoteSel(null);
+    for (const en of confirmDel) {
+      void sftpRemove(id, remoteInto(remotePath, en.name), en.isDir);
+    }
+    const gone = new Set(confirmDel.map((e) => e.name));
+    setRemoteSel((s) => s.filter((n) => !gone.has(n)));
     setConfirmDel(null);
   };
 
@@ -457,27 +782,30 @@ export function FilesPanel({
   //
   // Pointer olayları her yerde çalışır. Akış: pointerdown → eşiği (5px) geçen
   // pointermove → hayalet + hedef vurgusu → pointerup'ta isabet testi.
-  const transfer = (item: DragItem, side: "local" | "remote") => {
-    const id = sessionRef.current;
-    if (id == null) {
+  const transfer = (items: DragItem[], side: "local" | "remote") => {
+    if (sessionRef.current == null) {
       setMessage("Not connected yet — connect this Files panel before transferring.");
       return;
     }
-    if (item.isDir) {
-      setMessage("Folder transfer isn't supported yet — drag files instead.");
-      return;
-    }
-    if (item.side === side) {
+    if (items[0] && items[0].side === side) {
       setMessage("Drop it on the other panel to transfer.");
       return;
     }
-    setMessage("");
-    if (item.side === "local") {
-      void sftpUpload(id, item.path, remoteInto(remotePathRef.current, item.name));
-    } else {
-      const dest = localPathRef.current + localSep(localPathRef.current) + item.name;
-      void sftpDownload(id, item.path, dest);
+    const files = items.filter((i) => !i.isDir);
+    if (!files.length) {
+      setMessage("Folder transfer isn't supported yet — drag files instead.");
+      return;
     }
+    if (files.length < items.length) {
+      setMessage(`Skipped ${items.length - files.length} folder(s) — only files transfer for now.`);
+    }
+    dispatch(
+      files.map((i) => ({
+        kind: i.side === "local" ? ("upload" as const) : ("download" as const),
+        src: i.path,
+        name: i.name,
+      })),
+    );
   };
 
   /** İmlecin altındaki panel hangisi? (hayalet `pointer-events:none` olduğu için
@@ -490,8 +818,27 @@ export function FilesPanel({
     return i === 0 ? "local" : i === 1 ? "remote" : null;
   };
 
-  const beginDrag = (item: DragItem, e: React.PointerEvent) => {
-    if (e.button !== 0 || item.isDir) return; // klasör transferi yok
+  /** Sürüklenen küme: satır seçimin İÇİNDEYSE tüm seçim taşınır, değilse yalnız
+   *  o satır (seçimi bozmadan tek dosya sürüklemek mümkün kalsın). */
+  const dragSet = (side: "local" | "remote", key: string): DragItem[] => {
+    const one = (name: string, path: string, isDir: boolean): DragItem => ({
+      side,
+      name,
+      path,
+      isDir,
+    });
+    if (side === "local") {
+      const rows = localSel.includes(key) ? selLocal : localRows.filter((e) => e.path === key);
+      return rows.map((e) => one(e.name, e.path, e.isDir));
+    }
+    const rows = remoteSel.includes(key) ? selRemote : remoteRows.filter((e) => e.name === key);
+    return rows.map((e) => one(e.name, remoteInto(remotePath, e.name), e.isDir));
+  };
+
+  const beginDrag = (items: DragItem[], e: React.PointerEvent) => {
+    if (e.button !== 0 || !items.length) return;
+    const side = items[0].side;
+    const label = items.length > 1 ? `${items.length} items` : items[0].name;
     const startX = e.clientX;
     const startY = e.clientY;
     let started = false;
@@ -500,10 +847,10 @@ export function FilesPanel({
       if (!started) {
         if (Math.hypot(ev.clientX - startX, ev.clientY - startY) < 5) return;
         started = true;
-        dragFromRef.current = item.side;
-        setDragFrom(item.side);
+        dragFromRef.current = side;
+        setDragFrom(side);
       }
-      setGhost({ name: item.name, x: ev.clientX, y: ev.clientY });
+      setGhost({ name: label, x: ev.clientX, y: ev.clientY });
       setOverSide(paneUnder(ev.clientX, ev.clientY));
     };
     const up = (ev: PointerEvent) => {
@@ -515,7 +862,7 @@ export function FilesPanel({
       setDragFrom(null);
       setGhost(null);
       setOverSide(null);
-      if (started && over) transfer(item, over);
+      if (started && over) transfer(items, over);
     };
     window.addEventListener("pointermove", move);
     window.addEventListener("pointerup", up);
@@ -526,6 +873,32 @@ export function FilesPanel({
   const canDrop = (side: "local" | "remote") => dragFrom !== null && dragFrom !== side;
 
   const active = transfers.filter((t) => t.status === "active").length;
+  const clash = conflict ? conflict.queue[conflict.i] : null;
+  const remaining = conflict ? conflict.queue.length - conflict.i : 0;
+
+  /** Bir panelin başlığındaki arama + gizli anahtarları (iki panelde de aynı). */
+  const viewTools = (view: View, onView: (v: View) => void) => (
+    <>
+      <button
+        className={"tool" + (view.finding ? " on" : "")}
+        title="Filter this folder"
+        onClick={() => onView({ ...view, finding: !view.finding, filter: "" })}
+      >
+        <Search size={16} strokeWidth={1.75} />
+      </button>
+      <button
+        className={"tool" + (view.hidden ? " on" : "")}
+        title={view.hidden ? "Hide hidden files" : "Show hidden files"}
+        onClick={() => onView({ ...view, hidden: !view.hidden })}
+      >
+        {view.hidden ? (
+          <Eye size={16} strokeWidth={1.75} />
+        ) : (
+          <EyeOff size={16} strokeWidth={1.75} />
+        )}
+      </button>
+    </>
+  );
 
   return (
     <div className="files" onPointerDown={() => setGuideTopic("files")}>
@@ -560,6 +933,8 @@ export function FilesPanel({
           <div className="fpane-head">
             <HardDrive size={16} strokeWidth={1.75} />
             <span className="fpane-t">This PC</span>
+            {localSel.length > 1 && <span className="fsel-n mono">{localSel.length} selected</span>}
+            {viewTools(localView, setLocalView)}
             <button
               className="tool"
               title="Up"
@@ -584,21 +959,39 @@ export function FilesPanel({
               if (e.key === "Enter") void loadLocal(localInput.trim());
             }}
           />
+          {localView.finding && (
+            <FindBar
+              view={localView}
+              onView={setLocalView}
+              shown={localRows.length}
+              total={local?.entries.length ?? 0}
+            />
+          )}
+          <SortBar view={localView} onView={setLocalView} />
           <div className="flist">
             {localErr && <div className="empty term-err">{localErr}</div>}
-            {!localErr && local?.entries.length === 0 && (
-              <div className="empty">This folder is empty.</div>
+            {!localErr && localRows.length === 0 && (
+              <div className="empty">
+                {localView.filter.trim() ? "No file matches that filter." : "This folder is empty."}
+              </div>
             )}
-            {(local?.entries ?? []).map((en: LocalEntry) => (
+            {localRows.map((en: LocalEntry) => (
               <div
                 key={en.path}
-                className={"frow" + (localSel === en.path ? " sel" : "")}
-                onClick={() => setLocalSel(en.path)}
-                onPointerDown={(e) =>
-                  beginDrag({ side: "local", name: en.name, path: en.path, isDir: en.isDir }, e)
+                className={"frow" + (localSel.includes(en.path) ? " sel" : "")}
+                onClick={(e) =>
+                  pick(
+                    e,
+                    en.path,
+                    localRows.map((r) => r.path),
+                    localSel,
+                    setLocalSel,
+                    localAnchor,
+                  )
                 }
+                onPointerDown={(e) => beginDrag(dragSet("local", en.path), e)}
                 onDoubleClick={() => {
-                  setLocalSel(null);
+                  setLocalSel([]);
                   if (en.isDir) void loadLocal(en.path);
                 }}
               >
@@ -608,7 +1001,8 @@ export function FilesPanel({
                   <FileText size={16} strokeWidth={1.75} className="ficon dim" />
                 )}
                 <span className="fname">{en.name}</span>
-                {!en.isDir && <span className="fsize mono">{human(en.size)}</span>}
+                <span className="fsize mono">{en.isDir ? "" : human(en.size)}</span>
+                <span className="fdate mono">{when(en.modified)}</span>
               </div>
             ))}
           </div>
@@ -617,17 +1011,25 @@ export function FilesPanel({
         <div className="files-mid">
           <button
             className="mid-x"
-            title="Upload selected file to the host"
+            title={
+              selLocalFiles.length > 1
+                ? `Upload ${selLocalFiles.length} files to the host`
+                : "Upload selected file to the host"
+            }
             onClick={uploadSelected}
-            disabled={phase !== "ready" || !localSel}
+            disabled={phase !== "ready" || selLocalFiles.length === 0}
           >
             <Upload size={16} strokeWidth={2} />
           </button>
           <button
             className="mid-x"
-            title="Download selected file to this PC"
+            title={
+              selRemoteFiles.length > 1
+                ? `Download ${selRemoteFiles.length} files to this PC`
+                : "Download selected file to this PC"
+            }
             onClick={downloadSelected}
-            disabled={phase !== "ready" || !remoteSel}
+            disabled={phase !== "ready" || selRemoteFiles.length === 0}
           >
             <Download size={16} strokeWidth={2} />
           </button>
@@ -642,8 +1044,11 @@ export function FilesPanel({
           <div className="fpane-head">
             <Server size={16} strokeWidth={1.75} />
             <span className="fpane-t">{host?.label ?? "host"}</span>
+            {remoteSel.length > 1 && (
+              <span className="fsel-n mono">{remoteSel.length} selected</span>
+            )}
             <button
-              className="tool up-btn"
+              className="tool tool-wide"
               title="Upload files here"
               onClick={() => void uploadPick()}
               disabled={phase !== "ready"}
@@ -659,6 +1064,7 @@ export function FilesPanel({
             >
               <FolderPlus size={16} strokeWidth={1.75} />
             </button>
+            {viewTools(remoteView, setRemoteView)}
             <button
               className="tool"
               title="Up"
@@ -714,6 +1120,15 @@ export function FilesPanel({
               ))}
             </div>
           )}
+          {remoteView.finding && (
+            <FindBar
+              view={remoteView}
+              onView={setRemoteView}
+              shown={remoteRows.length}
+              total={remote.length}
+            />
+          )}
+          {phase === "ready" && <SortBar view={remoteView} onView={setRemoteView} />}
           <div className="flist">
             {phase === "idle" && (
               <div className="pane-idle">
@@ -764,27 +1179,36 @@ export function FilesPanel({
                 </span>
               </div>
             )}
+            {phase === "ready" && !remoteErr && remoteRows.length === 0 && (
+              <div className="empty">
+                {remoteView.filter.trim() ? "No file matches that filter." : "This folder is empty."}
+              </div>
+            )}
             {phase === "ready" &&
-              remote.map((en: RemoteEntry) => (
+              remoteRows.map((en: RemoteEntry) => (
                 <div
                   key={en.name}
-                  className={"frow" + (remoteSel === en.name ? " sel" : "")}
-                  onClick={() => setRemoteSel(en.name)}
-                  onPointerDown={(e) =>
-                    beginDrag(
-                      {
-                        side: "remote",
-                        name: en.name,
-                        path: remoteInto(remotePath, en.name),
-                        isDir: en.isDir,
-                      },
+                  className={"frow" + (remoteSel.includes(en.name) ? " sel" : "")}
+                  onClick={(e) =>
+                    pick(
                       e,
+                      en.name,
+                      remoteRows.map((r) => r.name),
+                      remoteSel,
+                      setRemoteSel,
+                      remoteAnchor,
                     )
                   }
+                  onPointerDown={(e) => beginDrag(dragSet("remote", en.name), e)}
                   onContextMenu={(e) => {
                     e.preventDefault();
                     e.stopPropagation();
-                    setRemoteSel(en.name);
+                    // Seçimin DIŞINA sağ tıklamak seçimi o satıra indirger; içine
+                    // tıklamak çoklu seçimi korur (menü kaç öğeye baktığını söyler).
+                    if (!remoteSel.includes(en.name)) {
+                      setRemoteSel([en.name]);
+                      remoteAnchor.current = en.name;
+                    }
                     setMenu({ entry: en, x: e.clientX, y: e.clientY });
                   }}
                   onDoubleClick={() => {
@@ -801,7 +1225,8 @@ export function FilesPanel({
                     <FileText size={16} strokeWidth={1.75} className="ficon dim" />
                   )}
                   <span className="fname">{en.name}</span>
-                  {!en.isDir && <span className="fsize mono">{human(en.size)}</span>}
+                  <span className="fsize mono">{en.isDir ? "" : human(en.size)}</span>
+                  <span className="fdate mono">{when(en.modified)}</span>
                 </div>
               ))}
           </div>
@@ -848,6 +1273,11 @@ export function FilesPanel({
                           style={{ transform: `scaleX(${(t.status === "done" ? 100 : pct) / 100})` }}
                         />
                       </div>
+                      {/* Hata METNİ bugüne kadar hiç çizilmiyordu: satır yalnız
+                          "failed" diyordu, sebebi (izin? disk? kopma?) kayıptı. */}
+                      {t.status === "failed" && t.message && (
+                        <div className="xfer-why">{t.message}</div>
+                      )}
                     </div>
                     {t.status === "active" && (
                       <button
@@ -859,6 +1289,16 @@ export function FilesPanel({
                         }}
                       >
                         <X size={16} strokeWidth={1.75} />
+                      </button>
+                    )}
+                    {(t.status === "failed" || t.status === "cancelled") && (
+                      <button
+                        className="tool tool-wide"
+                        title={`Transfer ${t.name} again`}
+                        onClick={() => retryTransfer(t)}
+                      >
+                        <RotateCw size={16} strokeWidth={1.75} />
+                        <span>Try again</span>
                       </button>
                     )}
                   </div>
@@ -882,18 +1322,19 @@ export function FilesPanel({
           }}
           onClick={(e) => e.stopPropagation()}
         >
-          {!menu.entry.isDir && (
+          {selRemoteFiles.length > 0 && (
             <button
               className="ctx-item"
               onClick={() => {
-                downloadEntry(menu.entry);
+                downloadSelected();
                 setMenu(null);
               }}
             >
-              <Download size={16} strokeWidth={1.75} /> Download
+              <Download size={16} strokeWidth={1.75} />{" "}
+              {selRemoteFiles.length > 1 ? `Download ${selRemoteFiles.length} files` : "Download"}
             </button>
           )}
-          {menu.entry.isDir && (
+          {menu.entry.isDir && selRemote.length === 1 && (
             <button
               className="ctx-item"
               onClick={() => {
@@ -904,24 +1345,27 @@ export function FilesPanel({
               <Folder size={16} strokeWidth={1.75} /> Open
             </button>
           )}
-          <button
-            className="ctx-item"
-            onClick={() => {
-              setNameDlg({ mode: "rename", value: menu.entry.name, target: menu.entry });
-              setMenu(null);
-            }}
-          >
-            <Pencil size={16} strokeWidth={1.75} /> Rename
-          </button>
+          {selRemote.length === 1 && (
+            <button
+              className="ctx-item"
+              onClick={() => {
+                setNameDlg({ mode: "rename", value: menu.entry.name, target: menu.entry });
+                setMenu(null);
+              }}
+            >
+              <Pencil size={16} strokeWidth={1.75} /> Rename
+            </button>
+          )}
           <div className="ctx-sep" />
           <button
             className="ctx-item danger"
             onClick={() => {
-              setConfirmDel(menu.entry);
+              setConfirmDel(selRemote.length ? selRemote : [menu.entry]);
               setMenu(null);
             }}
           >
-            <Trash2 size={16} strokeWidth={1.75} /> Delete
+            <Trash2 size={16} strokeWidth={1.75} />{" "}
+            {selRemote.length > 1 ? `Delete ${selRemote.length} items` : "Delete"}
           </button>
         </div>,
           document.body,
@@ -962,19 +1406,100 @@ export function FilesPanel({
         </div>
       )}
 
+      {/* Çakışma: hedefte aynı adda bir dosya var. Sessizce ÜSTÜNE YAZMAK eski
+          davranıştı — SFTP `create` ve yerel `File::create` ikisi de kırpar. */}
+      {clash && (
+        <div className="overlay">
+          <div className="dialog" role="dialog" aria-label="File already exists">
+            <div className="dlg-head">
+              <span className="dlg-title">That name is taken</span>
+              <button className="dlg-x" aria-label="Close" onClick={() => setConflict(null)}>
+                <X size={16} strokeWidth={1.75} />
+              </button>
+            </div>
+            <p className="dlg-sub">
+              <b className="mono">{clash.name}</b> already exists in{" "}
+              {clash.kind === "upload" ? "the host folder" : "this PC's folder"}. Overwriting
+              replaces it for good.
+              {remaining > 1 && <span className="raw">{remaining - 1} more name(s) also clash.</span>}
+            </p>
+            <label className="fld">
+              <span className="fld-k">Save it as</span>
+              <input
+                value={conflict?.rename ?? ""}
+                onChange={(e) =>
+                  setConflict((c) => (c ? { ...c, rename: e.target.value } : c))
+                }
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") resolveConflict("rename");
+                  if (e.key === "Escape") setConflict(null);
+                }}
+              />
+            </label>
+            {remaining > 1 && (
+              <button
+                className={"hf-check lit" + (applyAll ? " on" : "")}
+                onClick={() => setApplyAll(!applyAll)}
+                title="Answer once for every remaining name clash. Rename gives each file a free name automatically."
+              >
+                <span className="hf-box">
+                  <Check size={16} strokeWidth={3} />
+                </span>
+                <span>
+                  Do the same for the <b>{remaining - 1}</b> other clash(es)
+                </span>
+              </button>
+            )}
+            <div className="dlg-foot">
+              <button className="btn-ghost" onClick={() => resolveConflict("skip")}>
+                Skip
+              </button>
+              <button className="btn-ghost" onClick={() => resolveConflict("overwrite")}>
+                Overwrite
+              </button>
+              <button
+                className="btn-primary"
+                onClick={() => resolveConflict("rename")}
+                disabled={!(conflict?.rename ?? "").trim()}
+              >
+                Rename
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Silme onayı */}
-      {confirmDel && (
+      {confirmDel && confirmDel.length > 0 && (
         <div className="overlay" onMouseDown={(e) => e.target === e.currentTarget && setConfirmDel(null)}>
           <div className="dialog" role="dialog" aria-label="Delete">
             <div className="dlg-head">
-              <span className="dlg-title">Delete {confirmDel.isDir ? "folder" : "file"}?</span>
+              <span className="dlg-title">
+                {confirmDel.length > 1
+                  ? `Delete ${confirmDel.length} items?`
+                  : `Delete ${confirmDel[0].isDir ? "folder" : "file"}?`}
+              </span>
               <button className="dlg-x" aria-label="Close" onClick={() => setConfirmDel(null)}>
                 <X size={16} strokeWidth={1.75} />
               </button>
             </div>
             <p className="dlg-sub">
-              <b className="mono">{confirmDel.name}</b> will be permanently removed from the host.
-              {confirmDel.isDir && " The folder must be empty."} This can't be undone.
+              {confirmDel.length > 1 ? (
+                <>
+                  <b className="mono">{confirmDel.length} items</b> will be permanently removed from
+                  the host.
+                </>
+              ) : (
+                <>
+                  <b className="mono">{confirmDel[0].name}</b> will be permanently removed from the
+                  host.
+                </>
+              )}
+              {confirmDel.some((e) => e.isDir) && " Folders must be empty."} This can&apos;t be
+              undone.
+              {confirmDel.length > 1 && (
+                <span className="raw">{confirmDel.map((e) => e.name).join(", ")}</span>
+              )}
             </p>
             <div className="dlg-foot">
               <button className="btn-ghost" onClick={() => setConfirmDel(null)}>

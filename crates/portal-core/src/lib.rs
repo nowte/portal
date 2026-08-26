@@ -40,7 +40,7 @@ pub use model::{
 };
 pub use paths::Paths;
 pub use persist::write_secure_temp;
-pub use sftp::{FileEntry, SftpEvent, SftpSession, TransferId, TransferKind};
+pub use sftp::{free_names, FileEntry, SftpEvent, SftpSession, TransferId, TransferKind};
 pub use ssh::{
     AuthChoice, ConnectParams, Endpoint, HostKeyInfo, JumpHop, PtySize, SshEvent, SshRuntime,
     SshSession,

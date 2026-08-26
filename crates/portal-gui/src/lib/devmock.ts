@@ -89,9 +89,11 @@ function applyOverrides(): void {
       path: "C:\\Users\\you\\Downloads",
       parent: "C:\\Users\\you",
       entries: [
-        { name: "notes", path: "C:\\Users\\you\\Downloads\\notes", isDir: true, size: 0 },
-        { name: "deploy.sh", path: "C:\\Users\\you\\Downloads\\deploy.sh", isDir: false, size: 1840 },
-        { name: "archive.tar.gz", path: "C:\\Users\\you\\Downloads\\archive.tar.gz", isDir: false, size: 5242880 },
+        { name: "notes", path: "C:\\Users\\you\\Downloads\\notes", isDir: true, size: 0, modified: 1756166400, hidden: false },
+        { name: "deploy.sh", path: "C:\\Users\\you\\Downloads\\deploy.sh", isDir: false, size: 1840, modified: 1756080000, hidden: false },
+        { name: "archive.tar.gz", path: "C:\\Users\\you\\Downloads\\archive.tar.gz", isDir: false, size: 5242880, modified: 1755993600, hidden: false },
+        // Gizli dosya anahtarının tarayıcıda da denenebilmesi için.
+        { name: ".env", path: "C:\\Users\\you\\Downloads\\.env", isDir: false, size: 220, modified: 1755907200, hidden: true },
       ],
     };
     RESULTS.list_hosts = hosts;
@@ -169,7 +171,19 @@ export function installDevMock(): void {
   if (window.__TAURI_INTERNALS__) return;
   applyOverrides();
   window.__TAURI_INTERNALS__ = {
-    invoke: (cmd) => Promise.resolve(RESULTS[cmd] ?? null),
+    invoke: (cmd, args) => {
+      // Ad önerisi gerçek bir Rust çağrısıdır: önizlemede istenen adı aynen ver.
+      if (cmd === "free_names") {
+        return Promise.resolve((args as { wanted?: string[] } | undefined)?.wanted ?? []);
+      }
+      // Fuzzy filtre de öyle (sabit yanıt olamaz): önizlemede her şeyi geçir,
+      // filtre kutusu listeyi yutmasın.
+      if (cmd === "fuzzy_filter") {
+        const items = (args as { items?: string[] } | undefined)?.items ?? [];
+        return Promise.resolve(items.map((_, i) => i));
+      }
+      return Promise.resolve(RESULTS[cmd] ?? null);
+    },
     transformCallback: () => 0,
     unregisterListener: () => undefined,
     metadata: { currentWindow: { label: "main" }, currentWebview: { label: "main" } },

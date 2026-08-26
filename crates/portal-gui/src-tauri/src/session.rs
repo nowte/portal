@@ -128,6 +128,7 @@ struct EntryDto {
     is_dir: bool,
     is_symlink: bool,
     size: u64,
+    modified: Option<u64>,
 }
 
 #[derive(Serialize, Clone)]
@@ -153,6 +154,9 @@ enum SftpMsg {
         id: u64,
         kind: String,
         name: String,
+        /// Yerel yol + uzak yol: "tekrar dene" aynı transferi yeniden kurar.
+        local: String,
+        remote: String,
         total: u64,
     },
     TransferProgress {
@@ -346,6 +350,7 @@ pub fn spawn_files(app: AppHandle, id: u64, session: SftpSession, cmd_rx: Receiv
                                 is_dir: e.is_dir,
                                 is_symlink: e.is_symlink,
                                 size: e.size,
+                                modified: e.modified,
                             })
                             .collect();
                         emit(&app, &channel, SftpMsg::Listing { path, entries });
@@ -375,6 +380,8 @@ pub fn spawn_files(app: AppHandle, id: u64, session: SftpSession, cmd_rx: Receiv
                         id: tid,
                         kind,
                         name,
+                        local,
+                        remote,
                         total,
                     } => emit(
                         &app,
@@ -387,6 +394,8 @@ pub fn spawn_files(app: AppHandle, id: u64, session: SftpSession, cmd_rx: Receiv
                             }
                             .to_string(),
                             name,
+                            local,
+                            remote,
                             total,
                         },
                     ),
@@ -561,6 +570,10 @@ pub struct LocalEntry {
     pub is_dir: bool,
     /// Boyut (bayt).
     pub size: u64,
+    /// Son değişiklik (unix saniye) — okunamazsa None.
+    pub modified: Option<u64>,
+    /// Gizli mi (Windows'ta HIDDEN özniteliği, her yerde nokta ile başlayan ad).
+    pub hidden: bool,
 }
 
 /// Bir yerel dizini listeler (sıralı: önce klasörler). Yol boşsa kullanıcı home'u.
@@ -577,11 +590,16 @@ pub fn list_local(path: &str) -> Result<LocalListing, String> {
         let meta = item.metadata();
         let is_dir = meta.as_ref().map(|m| m.is_dir()).unwrap_or(false);
         let size = meta.as_ref().map(|m| m.len()).unwrap_or(0);
+        let modified = meta.as_ref().ok().and_then(unix_secs);
+        let name = item.file_name().to_string_lossy().into_owned();
+        let hidden = name.starts_with('.') || meta.as_ref().map(hidden_attr).unwrap_or(false);
         entries.push(LocalEntry {
-            name: item.file_name().to_string_lossy().into_owned(),
             path: item.path().to_string_lossy().into_owned(),
+            name,
             is_dir,
             size,
+            modified,
+            hidden,
         });
     }
     entries.sort_by(|a, b| b.is_dir.cmp(&a.is_dir).then_with(|| a.name.cmp(&b.name)));
@@ -596,6 +614,27 @@ pub fn list_local(path: &str) -> Result<LocalListing, String> {
 #[must_use]
 pub fn local_home() -> String {
     local_home_path().to_string_lossy().into_owned()
+}
+
+/// Dosya zamanını unix saniyeye çevirir (epoch öncesi / okunamayan → None).
+fn unix_secs(meta: &std::fs::Metadata) -> Option<u64> {
+    meta.modified()
+        .ok()?
+        .duration_since(std::time::UNIX_EPOCH)
+        .ok()
+        .map(|d| d.as_secs())
+}
+
+/// Windows'ta FILE_ATTRIBUTE_HIDDEN (0x2). Diğer platformlarda öznitelik yok →
+/// gizlilik yalnız addan (nokta) okunur.
+#[cfg(windows)]
+fn hidden_attr(meta: &std::fs::Metadata) -> bool {
+    use std::os::windows::fs::MetadataExt;
+    meta.file_attributes() & 0x2 != 0
+}
+#[cfg(not(windows))]
+fn hidden_attr(_meta: &std::fs::Metadata) -> bool {
+    false
 }
 
 fn local_home_path() -> PathBuf {

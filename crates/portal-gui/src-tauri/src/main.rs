@@ -1246,6 +1246,21 @@ fn local_home() -> String {
     session::local_home()
 }
 
+/// Fuzzy filtre: `items` içinden `query`'ye uyanların indekslerini özgün sırada
+/// döndürür (Files panelindeki filtre kutusu). Eşleştirme çekirdekte —
+/// `portal_core::fuzzy` — ikinci bir arama uygulaması yok.
+#[tauri::command]
+fn fuzzy_filter(query: String, items: Vec<String>) -> Vec<usize> {
+    portal_core::fuzzy::filter_indices(&query, items.iter().map(String::as_str))
+}
+
+/// Hedefte serbest ad önerisi (transfer çakışmasında Rename yolu). Adlandırma
+/// çekirdekte — `portal_core::free_names` — üretilen adlar birbirine de çarpmaz.
+#[tauri::command]
+fn free_names(taken: Vec<String>, wanted: Vec<String>) -> Vec<String> {
+    portal_core::free_names(&taken, &wanted)
+}
+
 /// Uptime olaylarını geçmişe yazıp frontend'e duyurur.
 ///
 /// Geçmiş her kontrolde değil, en fazla [`SAVE_EVERY`]'de bir diske yazılır:
@@ -1365,6 +1380,8 @@ fn main() {
             sftp_write,
             list_local,
             local_home,
+            fuzzy_filter,
+            free_names,
             list_monitors,
             add_monitor,
             update_monitor,

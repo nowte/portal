@@ -6,7 +6,7 @@
 //!
 //! Faz 2-A: bağlantı özellik-başına (P5 multiplexing bunu tek bağlantıya indirir).
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc as std_mpsc;
@@ -32,6 +32,8 @@ pub struct FileEntry {
     pub is_symlink: bool,
     /// Boyut (bayt).
     pub size: u64,
+    /// Son değişiklik zamanı (unix saniye) — sunucu göndermezse None.
+    pub modified: Option<u64>,
 }
 
 /// Transfer yönü.
@@ -74,6 +76,10 @@ pub enum SftpEvent {
         kind: TransferKind,
         /// Görünen ad.
         name: String,
+        /// Yerel taraf (tam yol) — "tekrar dene" aynı transferi yeniden kurar.
+        local: String,
+        /// Uzak taraf (yol).
+        remote: String,
         /// Toplam bayt (0 = bilinmiyor).
         total: u64,
     },
@@ -264,6 +270,8 @@ async fn run_sftp(
                     id,
                     kind: TransferKind::Upload,
                     name,
+                    local: local.to_string_lossy().into_owned(),
+                    remote: remote.clone(),
                     total,
                 });
                 match open_sftp(&handle).await {
@@ -294,6 +302,8 @@ async fn run_sftp(
                     id,
                     kind: TransferKind::Download,
                     name,
+                    local: local.to_string_lossy().into_owned(),
+                    remote: remote.clone(),
                     total,
                 });
                 match open_sftp(&handle).await {
@@ -396,12 +406,15 @@ async fn send_listing(sftp: &RawSftp, path: String, event_tx: &std_mpsc::Sender<
                 is_dir = meta.is_dir();
             }
         }
-        let size = e.metadata().size.unwrap_or(0);
+        let meta = e.metadata();
+        let size = meta.size.unwrap_or(0);
+        let modified = meta.mtime.map(u64::from);
         entries.push(FileEntry {
             name,
             is_dir,
             is_symlink,
             size,
+            modified,
         });
     }
     entries.sort_by(|a, b| b.is_dir.cmp(&a.is_dir).then_with(|| a.name.cmp(&b.name)));
@@ -456,7 +469,7 @@ async fn upload_task(
         Err(e) => {
             let _ = etx.send(SftpEvent::TransferFailed {
                 id,
-                message: format!("Couldn't open local file: {e}"),
+                message: fail_msg("Couldn't open the local file", &e.to_string()),
             });
             return;
         }
@@ -466,7 +479,7 @@ async fn upload_task(
         Err(e) => {
             let _ = etx.send(SftpEvent::TransferFailed {
                 id,
-                message: format!("Couldn't create remote file: {e}"),
+                message: fail_msg("Couldn't create the remote file", &e.to_string()),
             });
             return;
         }
@@ -487,7 +500,7 @@ async fn download_task(
         Err(e) => {
             let _ = etx.send(SftpEvent::TransferFailed {
                 id,
-                message: format!("Couldn't open remote file: {e}"),
+                message: fail_msg("Couldn't open the remote file", &e.to_string()),
             });
             return;
         }
@@ -497,7 +510,7 @@ async fn download_task(
         Err(e) => {
             let _ = etx.send(SftpEvent::TransferFailed {
                 id,
-                message: format!("Couldn't create local file: {e}"),
+                message: fail_msg("Couldn't create the local file", &e.to_string()),
             });
             return;
         }
@@ -530,7 +543,7 @@ async fn copy_loop<R, W>(
             Err(e) => {
                 let _ = etx.send(SftpEvent::TransferFailed {
                     id,
-                    message: format!("Read error: {e}"),
+                    message: fail_msg("Transfer stopped while reading", &e.to_string()),
                 });
                 return;
             }
@@ -538,7 +551,7 @@ async fn copy_loop<R, W>(
         if let Err(e) = writer.write_all(&buf[..n]).await {
             let _ = etx.send(SftpEvent::TransferFailed {
                 id,
-                message: format!("Write error: {e}"),
+                message: fail_msg("Transfer stopped while writing", &e.to_string()),
             });
             return;
         }
@@ -554,7 +567,9 @@ async fn copy_loop<R, W>(
     if writer.flush().await.is_err() {
         let _ = etx.send(SftpEvent::TransferFailed {
             id,
-            message: "Flush error".to_string(),
+            message:
+                "Couldn't flush the last bytes to disk. The file may be incomplete — try again."
+                    .to_string(),
         });
         return;
     }
@@ -563,6 +578,79 @@ async fn copy_loop<R, W>(
         transferred: done,
     });
     let _ = etx.send(SftpEvent::TransferDone { id });
+}
+
+/// Ham SFTP/IO hata metninden düz-dilli bir sebep çıkarır. Sunucular farklı
+/// dillerde/kodlarda yanıt verir → metin eşlemesi; eşleşme yoksa None (ham metin
+/// tek başına yeterince açıklayıcıdır).
+fn why(raw: &str) -> Option<&'static str> {
+    let low = raw.to_lowercase();
+    if low.contains("permission denied") || low.contains("access denied") || low.contains("eacces")
+    {
+        Some("The account you connected with isn't allowed to write there. Pick another folder, or connect as a user that can.")
+    } else if low.contains("no space") || low.contains("enospc") || low.contains("quota") {
+        Some("The disk is full. Free some space and try again.")
+    } else if low.contains("no such file") || low.contains("not found") || low.contains("enoent") {
+        Some("That path is gone. Refresh the folder and try again.")
+    } else if low.contains("connection")
+        || low.contains("broken pipe")
+        || low.contains("timed out")
+        || low.contains("eof")
+    {
+        Some("The connection dropped. Reconnect and try again.")
+    } else {
+        None
+    }
+}
+
+/// Bir transfer hatası mesajı: ne olduğu + (bilinebiliyorsa) nasıl düzeltileceği.
+fn fail_msg(what: &str, raw: &str) -> String {
+    match why(raw) {
+        Some(hint) => format!("{what}: {raw}. {hint}"),
+        None => format!("{what}: {raw}"),
+    }
+}
+
+/// Ad → (gövde, uzantı): "archive.tar.gz" → ("archive.tar", ".gz"). Baştaki nokta
+/// uzantı DEĞİLDİR (".env" bütün hâlde gövdedir).
+fn split_ext(name: &str) -> (&str, &str) {
+    match name.rfind('.') {
+        Some(i) if i > 0 => (&name[..i], &name[i..]),
+        _ => (name, ""),
+    }
+}
+
+/// Hedefte serbest bir ad üretir: "notes.txt" → "notes (1).txt".
+///
+/// Transfer hedefinde aynı ad varsa kullanıcıya önerilen addır (Rename yolu).
+#[must_use]
+pub fn unique_name(name: &str, taken: &HashSet<String>) -> String {
+    if !taken.contains(name) {
+        return name.to_string();
+    }
+    let (stem, ext) = split_ext(name);
+    for i in 1..1000 {
+        let candidate = format!("{stem} ({i}){ext}");
+        if !taken.contains(&candidate) {
+            return candidate;
+        }
+    }
+    format!("{stem} (new){ext}")
+}
+
+/// `wanted` listesinin her ögesi için hedefte serbest bir ad üretir. Üretilen
+/// adlar da doluya eklenir → aynı ada çarpan iki dosya AYNI öneriyi almaz.
+#[must_use]
+pub fn free_names(taken: &[String], wanted: &[String]) -> Vec<String> {
+    let mut set: HashSet<String> = taken.iter().cloned().collect();
+    wanted
+        .iter()
+        .map(|w| {
+            let name = unique_name(w, &set);
+            set.insert(name.clone());
+            name
+        })
+        .collect()
 }
 
 /// Bir yoldan (uzak veya yerel) son bileşeni (dosya adı) döndürür.
@@ -588,6 +676,59 @@ mod tests {
         assert_eq!(file_name("C:\\Users\\a\\file.txt"), "file.txt");
         assert_eq!(file_name("plain"), "plain");
         assert_eq!(file_name("/trailing/"), "trailing");
+    }
+
+    #[test]
+    fn unique_name_suffixes_until_free() {
+        let taken: HashSet<String> = ["notes.txt", "notes (1).txt", "archive.tar.gz", ".env"]
+            .iter()
+            .map(|s| (*s).to_string())
+            .collect();
+        assert_eq!(unique_name("fresh.txt", &taken), "fresh.txt");
+        assert_eq!(unique_name("notes.txt", &taken), "notes (2).txt");
+        // Uzantı korunur, gövdeye eklenir.
+        assert_eq!(unique_name("archive.tar.gz", &taken), "archive.tar (1).gz");
+        // Baştaki nokta uzantı değildir.
+        assert_eq!(unique_name(".env", &taken), ".env (1)");
+    }
+
+    #[test]
+    fn free_names_do_not_collide_with_each_other() {
+        let taken = vec!["a.txt".to_string()];
+        let wanted = vec![
+            "a.txt".to_string(),
+            "a.txt".to_string(),
+            "b.txt".to_string(),
+        ];
+        assert_eq!(
+            free_names(&taken, &wanted),
+            vec!["a (1).txt", "a (2).txt", "b.txt"]
+        );
+    }
+
+    #[test]
+    fn why_names_the_common_causes() {
+        assert!(why("Permission denied (os error 13)")
+            .unwrap()
+            .contains("isn't allowed to write"));
+        assert!(why("write failed: ENOSPC no space left on device")
+            .unwrap()
+            .contains("disk is full"));
+        assert!(why("No such file or directory")
+            .unwrap()
+            .contains("path is gone"));
+        assert!(why("connection reset by peer")
+            .unwrap()
+            .contains("Reconnect"));
+        assert_eq!(why("something odd happened"), None);
+    }
+
+    #[test]
+    fn fail_msg_keeps_the_raw_error_and_adds_the_fix() {
+        let m = fail_msg("Couldn't create the remote file", "Permission denied");
+        assert!(m.starts_with("Couldn't create the remote file: Permission denied."));
+        assert!(m.contains("connect as a user that can"));
+        assert_eq!(fail_msg("Nope", "weird"), "Nope: weird");
     }
 
     #[test]

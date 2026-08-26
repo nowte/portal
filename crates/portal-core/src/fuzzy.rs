@@ -53,6 +53,21 @@ pub fn best_score<'a>(query: &str, texts: impl IntoIterator<Item = &'a str>) -> 
     texts.into_iter().filter_map(|t| score(query, t)).max()
 }
 
+/// `items` içinden `query`'ye uyanların indekslerini ÖZGÜN SIRADA döndürür.
+///
+/// [`best_score`]'dan farkı: skora göre yeniden sıralamaz. Dosya listesi gibi
+/// kendi sırası (klasörler önce, seçilen sütuna göre) anlam taşıyan listelerde
+/// arama yalnız eler — sıralamayı kullanıcı seçer.
+#[must_use]
+pub fn filter_indices<'a>(query: &str, items: impl IntoIterator<Item = &'a str>) -> Vec<usize> {
+    items
+        .into_iter()
+        .enumerate()
+        .filter(|(_, t)| score(query, t).is_some())
+        .map(|(i, _)| i)
+        .collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -87,6 +102,17 @@ mod tests {
         let early = score("api", "api-02").unwrap();
         let late = score("api", "my-api").unwrap();
         assert!(early > late, "{early} > {late}");
+    }
+
+    #[test]
+    fn filter_indices_keeps_original_order() {
+        let items = ["notes.txt", "deploy.sh", "readme.md", "docs"];
+        // "d" hem deploy'a hem readme'ye hem docs'a uyar; sıra bozulmaz.
+        assert_eq!(filter_indices("d", items), vec![1, 2, 3]);
+        assert_eq!(filter_indices("txt", items), vec![0]);
+        assert!(filter_indices("zzz", items).is_empty());
+        // Boş sorgu her şeyi geçirir.
+        assert_eq!(filter_indices("", items), vec![0, 1, 2, 3]);
     }
 
     #[test]

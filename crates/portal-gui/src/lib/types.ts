@@ -138,12 +138,17 @@ export interface RemoteEntry {
   isDir: boolean;
   isSymlink: boolean;
   size: number;
+  // Son değişiklik, unix saniye — sunucu göndermezse null.
+  modified: number | null;
 }
 export interface LocalEntry {
   name: string;
   path: string;
   isDir: boolean;
   size: number;
+  modified: number | null;
+  // Gizli mi (Windows HIDDEN özniteliği ya da nokta ile başlayan ad).
+  hidden: boolean;
 }
 export interface LocalListing {
   path: string;
@@ -164,7 +169,16 @@ export type SftpMsg =
   | { type: "ready" }
   | { type: "listing"; path: string; entries: RemoteEntry[] }
   | { type: "listError"; path: string; message: string }
-  | { type: "transferQueued"; id: number; kind: "upload" | "download"; name: string; total: number }
+  | {
+      type: "transferQueued";
+      id: number;
+      kind: "upload" | "download";
+      name: string;
+      // Kaynak + hedef: başarısız transfer aynı argümanlarla yeniden kurulur.
+      local: string;
+      remote: string;
+      total: number;
+    }
   | { type: "transferProgress"; id: number; transferred: number }
   | { type: "transferDone"; id: number }
   | { type: "transferFailed"; id: number; message: string }
