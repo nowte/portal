@@ -3,6 +3,13 @@ import { Search } from "lucide-react";
 import { usePortal } from "../context";
 import { openSidebar } from "../dock/dock";
 
+// Modül-düzeyi köprü (prop-drilling'siz): openServerSearch() — Ctrl+F buradan
+// açar. Bkz. Settings.tsx'teki aynı desen.
+let externalOpen: (() => void) | null = null;
+export function openServerSearch(): void {
+  externalOpen?.();
+}
+
 // 🔍 sunucu arama popover'ı: host'ları filtreler; seçince odaklar. (İleri/geri yok.)
 export function ServerSearch() {
   const { hosts, selectHost } = usePortal();
@@ -10,6 +17,18 @@ export function ServerSearch() {
   const [q, setQ] = useState("");
   const ref = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+
+  // Ctrl+F köprüsü: açıksa kutuyu yeniden odakla (kullanıcı ikinci kez bastığında
+  // popover kapanıp açılmasın, imleç alana dönsün).
+  useEffect(() => {
+    externalOpen = () => {
+      setOpen(true);
+      inputRef.current?.select();
+    };
+    return () => {
+      externalOpen = null;
+    };
+  }, []);
 
   useEffect(() => {
     if (!open) return;

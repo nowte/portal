@@ -38,6 +38,7 @@ const EMPTY_BOOT = {
   minimize_to_tray: false,
   // Profil yok → vault düz metin → kimlik hatırlanamaz (çekirdek reddeder).
   can_remember: false,
+  terminal_font_size: 13,
   hosts: [] as unknown[],
   folders: [] as unknown[],
 };

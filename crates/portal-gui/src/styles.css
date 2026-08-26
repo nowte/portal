@@ -1974,6 +1974,17 @@ input, textarea, select { font: inherit; }
 .term-wrap {
   position: relative; flex: 1; min-height: 0; height: 100%;
   margin: var(--sp-2); border-radius: var(--r-s); overflow: hidden; background: #000;
+
+  /* ADANIN KENDİ PALETİ — tema ile DEĞİŞMEZ. Terminal zemini her temada saf
+     siyah olduğu için üstünde duran her şey beyazın alfasından türer. Portal
+     token'ı buraya giremez: Paper temasında --surface #ffffff, yani arama
+     şeridi siyah terminalin üstünde bembeyaz bir kutu oluyordu; --primary de
+     #0c0c0c olduğundan Reconnect düğmesi siyah üstüne siyah kalıyordu. */
+  --t-fg: #ffffff;
+  --t-dim: rgba(255, 255, 255, 0.56);
+  --t-faint: rgba(255, 255, 255, 0.34);
+  --t-line: rgba(255, 255, 255, 0.16);
+  --t-hover: rgba(255, 255, 255, 0.1);
 }
 .term-host { position: absolute; inset: 0; padding: var(--sp-2); }
 .term-host .xterm { height: 100%; }
@@ -2010,6 +2021,81 @@ input, textarea, select { font: inherit; }
   font-size: var(--fs-2); color: var(--dim); word-break: break-word;
 }
 .term-dim { font-size: var(--fs-3); color: var(--dim); margin-bottom: var(--sp-3); line-height: 1.5; }
+
+/* ── Terminalin kendi şeritleri (§7.5 adası) ─────────────────────────────
+   Bunlar Portal chrome'u DEĞİL, terminalin içinde yaşayan araçlardır: mono
+   yazı, siyah zemin, beyaz alfasından bir saç teli. Bir kez de olsa Portal'ın
+   `.fwrap`/`.tool`/`.btn-primary` gövdelerini ödünç aldılar ve Paper temasında
+   siyah terminalin ortasında beyaz bir kutu olarak durdular — ada kendi
+   yüzeyini kendi taşır. Çizgi §1'in değil, §7.5'in dilidir: terminalde bir
+   araç şeridi zaten böyle görünür. */
+.term-chip {
+  position: absolute; z-index: 5; display: flex; align-items: center;
+  border-radius: var(--r-s); background: #000;
+  box-shadow: 0 0 0 1px var(--t-line), 0 8px 24px rgba(0, 0, 0, 0.8);
+  font-family: var(--mono); font-size: var(--fs-2); color: var(--t-fg);
+  animation: p-rise var(--dur-panel) var(--ease-out) both;
+}
+
+/* Arama (Ctrl+F). `/` istemi less/vim'in arama işaretidir — kutunun ne olduğunu
+   simge değil terminalin kendi geleneği söyler. */
+.term-find { top: var(--sp-2); right: var(--sp-2); gap: var(--sp-2); padding: var(--sp-1) var(--sp-1) var(--sp-1) var(--sp-2); }
+.term-find-p { flex: none; color: var(--t-dim); }
+.term-find-in {
+  width: 200px; min-width: 0; background: none; border: none; outline: none;
+  font-family: var(--mono); font-size: var(--fs-2); color: var(--t-fg);
+}
+.term-find-in::placeholder { color: var(--t-faint); }
+/* Odak halkası: §10'un `--primary`si Paper'da neredeyse siyah — bu adada
+   görünmezdi. Halka kutunun kendisine ve ada rengiyle çizilir. */
+.term-find-in:focus-visible { outline: none; }
+.term-find:has(.term-find-in:focus-visible) { outline: 2px solid var(--t-fg); outline-offset: 2px; }
+.term-find-n {
+  flex: none; min-width: 48px; text-align: right; color: var(--t-dim);
+  font-variant-numeric: tabular-nums; white-space: nowrap;
+}
+.term-find-b {
+  width: 24px; height: 24px; flex: none; display: inline-grid; place-items: center;
+  border-radius: var(--r-s); color: var(--t-dim);
+  transition: transform var(--dur-press) var(--ease-out),
+    background-color var(--dur-hover) var(--ease-out),
+    color var(--dur-hover) var(--ease-out);
+}
+@media (hover: hover) and (pointer: fine) {
+  .term-find-b:hover:not(:disabled) { color: var(--t-fg); background: var(--t-hover); }
+}
+.term-find-b:active:not(:disabled) { transform: scale(0.97); }
+.term-find-b:disabled { opacity: 0.35; cursor: default; }
+.term-find-b:focus-visible { outline-color: var(--t-fg); }
+
+/* Kopma şeridi. Bir kez bağlandıysak çıktı EKRANDA KALIR — kaplayan kart yerine
+   altta ince bir şerit; yeniden bağlanmak tek tık. */
+.term-bar {
+  left: var(--sp-2); right: var(--sp-2); bottom: var(--sp-2);
+  gap: var(--sp-3); padding: var(--sp-2);
+}
+.term-bar-t { flex: 1; min-width: 0; color: var(--t-dim); line-height: 1.5; }
+/* Adanın birincil düğmesi: her temada beyaz üstüne siyah — terminalin kendi
+   ön/arka planıyla aynı ikili. */
+.term-btn {
+  flex: none; height: 28px; padding: 0 var(--sp-2); border-radius: var(--r-s);
+  background: var(--t-fg); color: #000;
+  font-family: var(--mono); font-size: var(--fs-2); font-weight: 500;
+  transition: transform var(--dur-press) var(--ease-out),
+    opacity var(--dur-hover) var(--ease-out);
+}
+@media (hover: hover) and (pointer: fine) {
+  .term-btn:hover { opacity: 0.88; }
+}
+.term-btn:active { transform: scale(0.97); }
+.term-btn:focus-visible { outline-color: var(--t-fg); }
+
+/* Onay diyaloğunda gösterilen ham URL — sunucudan geldi, olduğu gibi okunmalı. */
+.term-link {
+  font-family: var(--mono); font-size: var(--fs-2); color: var(--text);
+  background: var(--panel); border-radius: var(--r-s); padding: var(--sp-2);
+  margin-bottom: var(--sp-3); word-break: break-all; line-height: 1.5;
+}
 
 /* ── Files (iki panel + transfer kuyruğu) ────────────────────────────────
    Mockup: 09-files.html. İki panel ve transfer kuyruğu birer YÜZEN yüzey:

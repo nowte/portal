@@ -15,6 +15,10 @@ import type { Bootstrap, Folder, Host } from "./lib/types";
 import * as ipc from "./lib/ipc";
 import { applyTheme } from "./lib/theme";
 
+/** Terminal yazı boyutu varsayılanı — portal-core `store::TERM_FONT_DEFAULT`
+ *  ile aynı olmalı (bootstrap gelene kadarki ilk değer ve Ctrl+0 hedefi). */
+const TERM_FONT_DEFAULT = 13;
+
 /** Bir oturumun (shell/files/monitor) canlı bağlantı fazı. */
 export type ConnState = "connecting" | "connected" | "error" | "closed";
 /** Bir host'un toplam durumu (herhangi bir oturumu bağlıysa online). */
@@ -49,6 +53,11 @@ interface PortalCtx {
   /** Host'un "sayfa açılınca otomatik bağlan" bayrağını değiştir. */
   setAutoConnect: (id: string, value: boolean) => Promise<void>;
   changeTheme: (t: string) => Promise<void>;
+  /** Terminal yazı boyutu (px) — uygulama geneli, tüm açık terminaller okur. */
+  termFontSize: number;
+  /** Boyutu `delta` kadar değiştir; `delta` yoksa varsayılana dön (Ctrl+0).
+   *  Sınırı çekirdek koyar, kırpılmış değer geri yazılır. */
+  nudgeTermFont: (delta?: number) => void;
   refresh: () => Promise<void>;
   /** Onboarding'i tamamla (tema + opsiyonel profil/parola/kurtarma cümlesi) → benimse. */
   completeOnboarding: (
@@ -92,6 +101,10 @@ export function PortalProvider({ children }: { children: ReactNode }) {
   const [hosts, setHosts] = useState<Host[]>([]);
   const [folders, setFolders] = useState<Folder[]>([]);
   const [theme, setTheme] = useState("black");
+  // Çekirdeğin varsayılanıyla (store::TERM_FONT_DEFAULT) aynı olmalı; bootstrap
+  // gelince gerçek değerle değişir.
+  const [termFontSize, setTermFontSize] = useState(TERM_FONT_DEFAULT);
+  const fontRef = useRef(TERM_FONT_DEFAULT);
   const [ready, setReady] = useState(false);
   const [selectedHost, setSelectedHost] = useState<string | null>(null);
   // Canlı oturum durumu: sessionId → {hostId, kind, state, paneId}.
@@ -115,6 +128,8 @@ export function PortalProvider({ children }: { children: ReactNode }) {
     setHosts(b.hosts);
     setFolders(b.folders);
     setTheme(b.theme);
+    fontRef.current = b.terminal_font_size;
+    setTermFontSize(b.terminal_font_size);
   }, []);
 
   useEffect(() => {
@@ -167,6 +182,22 @@ export function PortalProvider({ children }: { children: ReactNode }) {
   const changeTheme = useCallback(async (t: string) => {
     setTheme(t); // anında uygula (effect); sonra kalıcılaştır
     await ipc.setTheme(t);
+  }, []);
+
+  // Ctrl +/- ve Ctrl+0. Anında uygula, sonra kalıcılaştır; çekirdeğin kırptığı
+  // değeri geri yaz (sınırdayken tuşa basmaya devam etmek boyutu kaydırmasın).
+  // Güncel boyut ref'te tutulur: state updater'ının içinde IPC çağırmak
+  // StrictMode'da isteği ikiye katlardı.
+  const nudgeTermFont = useCallback((delta?: number) => {
+    const next = delta === undefined ? TERM_FONT_DEFAULT : fontRef.current + delta;
+    fontRef.current = next;
+    setTermFontSize(next);
+    void ipc.setTerminalFontSize(next).then((px) => {
+      // Tarayıcı önizlemesinde köprü yok → null döner; o zaman istediğimizde kal.
+      if (typeof px !== "number") return;
+      fontRef.current = px;
+      setTermFontSize(px);
+    });
   }, []);
 
   const completeOnboarding = useCallback(
@@ -290,6 +321,8 @@ export function PortalProvider({ children }: { children: ReactNode }) {
         removeHost,
         setAutoConnect,
         changeTheme,
+        termFontSize,
+        nudgeTermFont,
         refresh,
         completeOnboarding,
         unlock,

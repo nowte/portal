@@ -12,6 +12,7 @@ import { AuthDialog } from "./components/AuthDialog";
 import { Settings } from "./components/Settings";
 import { SnippetsManager } from "./components/SnippetsManager";
 import { About } from "./components/About";
+import { openServerSearch } from "./components/ServerSearch";
 import { DockLayout } from "./dock/DockLayout";
 import { resetLayout, toggleSidebar } from "./dock/dock";
 
@@ -42,6 +43,18 @@ function Shell() {
       } else if (k === "b") {
         e.preventDefault();
         toggleSidebar();
+      } else if (k === "f") {
+        // Ctrl+F HER ZAMAN yutulur: yutulmazsa WebView2 kendi (Edge'in) sayfa-içi
+        // arama çubuğunu açar ve Portal'ın içinde bir tarayıcı kutusu belirir.
+        // Tauri v2 wry'ın `with_browser_accelerator_keys` ayarını dışarı vermiyor,
+        // yani bunu kapatmanın tek yolu tuşu burada tüketmek.
+        e.preventDefault();
+        // Terminal kendi aramasını kendisi açar (TerminalPanel, xterm kancası) —
+        // olay oradan da buraya kabarır, iki arama birden açılmasın.
+        if ((e.target as HTMLElement | null)?.closest?.(".term-wrap")) return;
+        // Modal açıkken arkasındaki popover'ı açmak anlamsız; tuş yine de yutuldu.
+        if (document.querySelector(".overlay")) return;
+        openServerSearch();
       }
     };
     window.addEventListener("keydown", onKey);

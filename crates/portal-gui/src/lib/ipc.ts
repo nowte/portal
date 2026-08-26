@@ -183,6 +183,16 @@ export const onUptime = (cb: () => void): Promise<UnlistenFn> =>
 export const onMonitorsChanged = (cb: () => void): Promise<UnlistenFn> =>
   listen("portal://monitors-changed", () => cb());
 
+/** Terminal yazı boyutu (px, uygulama geneli); çekirdek sınırlara kırpar ve
+ *  kırpılmış değeri döndürür. */
+export const setTerminalFontSize = (px: number): Promise<number> =>
+  invoke<number>("set_terminal_font_size", { px });
+
+/** Terminalde tıklanan bağlantıyı sistem tarayıcısında açar (yalnız http/https).
+ *  Kullanıcı onayı ÇAĞIRANIN sorumluluğu — Rust tarafı yalnız şemayı doğrular. */
+export const openExternal = (url: string): Promise<void> =>
+  invoke("open_external", { url });
+
 /** Pencere kapatılınca tepsiye inme ayarı. */
 export const setMinimizeToTray = (enabled: boolean): Promise<void> =>
   invoke("set_minimize_to_tray", { enabled });

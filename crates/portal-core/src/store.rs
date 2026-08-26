@@ -25,6 +25,14 @@ use crate::vault::keystore::{KeyStore, KeyringStore};
 use crate::vault::recovery::normalize_phrase;
 use crate::vault::Vault;
 
+/// Terminal yazı boyutu sınırları (px). Altında karakterler okunmuyor, üstünde
+/// 80 sütunluk çıktı dar pencereye sığmıyor.
+pub const TERM_FONT_MIN: u8 = 9;
+/// Bkz. [`TERM_FONT_MIN`].
+pub const TERM_FONT_MAX: u8 = 24;
+/// Ayarlanmamışsa geçerli olan boyut (docs/DESIGN.md §7.5).
+pub const TERM_FONT_DEFAULT: u8 = 13;
+
 /// `~/.ssh/config` içe aktarma özeti.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct ImportSummary {
@@ -453,6 +461,27 @@ impl Store {
     pub fn set_minimize_to_tray(&mut self, enabled: bool) -> Result<()> {
         self.config.minimize_to_tray = enabled;
         self.config.save(&self.paths.config_file())
+    }
+
+    /// Terminal yazı boyutu (px) — uygulama geneli.
+    #[must_use]
+    pub fn terminal_font_size(&self) -> u8 {
+        self.config
+            .terminal_font_size
+            .unwrap_or(TERM_FONT_DEFAULT)
+            .clamp(TERM_FONT_MIN, TERM_FONT_MAX)
+    }
+
+    /// Terminal yazı boyutunu ayarlar (sınırlara kırpar) ve config'i yazar;
+    /// kırpılmış değeri döndürür.
+    ///
+    /// # Errors
+    /// Yazma başarısız olursa hata döner.
+    pub fn set_terminal_font_size(&mut self, px: u8) -> Result<u8> {
+        let px = px.clamp(TERM_FONT_MIN, TERM_FONT_MAX);
+        self.config.terminal_font_size = Some(px);
+        self.config.save(&self.paths.config_file())?;
+        Ok(px)
     }
 
     /// Tüm uptime monitörleri.
@@ -1324,5 +1353,26 @@ mod tests {
         assert!(!store.is_locked());
         assert_eq!(store.hosts().len(), 1);
         assert_eq!(store.host(hid).unwrap().address, "10.0.0.9");
+    }
+
+    #[test]
+    fn terminal_font_size_defaults_clamps_and_persists() {
+        let dir = tempdir().unwrap();
+        let paths = Paths::new(dir.path().join("config"), dir.path().join("data"));
+        let ks = MemoryKeyStore::new();
+        let mut store = open_mem(&paths, ks.clone());
+
+        // Ayarlanmamışken varsayılan.
+        assert_eq!(store.terminal_font_size(), TERM_FONT_DEFAULT);
+
+        // Sınır dışı istekler kırpılır (UI'den gelen tekrarlı Ctrl+- taşırmasın).
+        assert_eq!(store.set_terminal_font_size(200).unwrap(), TERM_FONT_MAX);
+        assert_eq!(store.terminal_font_size(), TERM_FONT_MAX);
+        assert_eq!(store.set_terminal_font_size(1).unwrap(), TERM_FONT_MIN);
+
+        // Config'e yazıldı → yeniden açılışta korunur.
+        store.set_terminal_font_size(17).unwrap();
+        let reopened = open_mem(&paths, ks);
+        assert_eq!(reopened.terminal_font_size(), 17);
     }
 }

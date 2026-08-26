@@ -46,7 +46,7 @@ pub use ssh::{
     SshSession,
 };
 pub use ssh_config::ImportedHost;
-pub use store::{ImportSummary, Store};
+pub use store::{ImportSummary, Store, TERM_FONT_DEFAULT, TERM_FONT_MAX, TERM_FONT_MIN};
 pub use sync::{SyncOutcome, SyncStatus};
 pub use teaching::{TeachingCard, Topic};
 pub use tunnel::{TunnelEvent, TunnelKind, TunnelSession, TunnelSpec};

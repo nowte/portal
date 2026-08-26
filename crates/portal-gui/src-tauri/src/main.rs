@@ -250,6 +250,8 @@ struct Bootstrap {
     /// Vault ŞİFRELİ mi → "Remember" sunulabilir mi. Profilsiz modda vault düz
     /// metin JSON'dır ve sır oraya yazılmaz (core reddeder).
     can_remember: bool,
+    /// Terminal yazı boyutu (px) — uygulama geneli, Ctrl +/- ile değişir.
+    terminal_font_size: u8,
     hosts: Vec<Host>,
     folders: Vec<Folder>,
 }
@@ -266,6 +268,7 @@ fn bootstrap_of(s: &Store) -> Bootstrap {
         device_label: s.device_label().to_string(),
         minimize_to_tray: s.minimize_to_tray(),
         can_remember: s.vault_is_encrypted(),
+        terminal_font_size: s.terminal_font_size(),
         hosts: s.hosts().to_vec(),
         folders: s.folders().to_vec(),
     }
@@ -1153,6 +1156,41 @@ fn set_minimize_to_tray(state: State<'_, AppState>, enabled: bool) -> Result<(),
         .map_err(|e| e.to_string())
 }
 
+/// Terminal yazı boyutunu (px) ayarlar; sınırlara kırpılmış değeri döndürür.
+/// Host başına değil, uygulama geneli (config.toml).
+#[tauri::command]
+fn set_terminal_font_size(state: State<'_, AppState>, px: u8) -> Result<u8, String> {
+    state
+        .lock()?
+        .set_terminal_font_size(px)
+        .map_err(|e| e.to_string())
+}
+
+/// Terminalde tıklanan bir bağlantıyı sistem tarayıcısında açar.
+///
+/// URL uzak sunucunun çıktısından gelir → güvenilmez. Frontend zaten kullanıcıya
+/// onay sordu; burada ikinci kapı olarak şema beyaz listesi var: yalnız http/https.
+/// `file:`, `javascript:` ya da özel şemalar sessizce reddedilmez, hata döner.
+#[tauri::command]
+fn open_external(url: String) -> Result<(), String> {
+    checked_web_url(&url)?;
+    tauri_plugin_opener::open_url(&url, None::<&str>)
+        .map_err(|e| format!("Couldn't open {url} in your browser: {e}"))
+}
+
+/// Şema beyaz listesi: yalnız `http` ve `https` — şema büyük/küçük harf duyarsız,
+/// gerisi değil. Ayrı fonksiyon çünkü test edilmesi gereken kısım bu; açma işini
+/// OS yapar.
+fn checked_web_url(url: &str) -> Result<(), String> {
+    let scheme = url.split_once("://").map(|(s, _)| s.to_ascii_lowercase());
+    if matches!(scheme.as_deref(), Some("http") | Some("https")) {
+        return Ok(());
+    }
+    Err(format!(
+        "Portal only opens http:// and https:// links. Got: {url}"
+    ))
+}
+
 /// Pencereyi geri getirir (tepsi menüsü / tepsi ikonuna tık).
 fn show_main_window(app: &AppHandle) {
     if let Some(win) = app.get_webview_window("main") {
@@ -1332,7 +1370,9 @@ fn main() {
             update_monitor,
             remove_monitor,
             check_monitor_now,
-            set_minimize_to_tray
+            set_minimize_to_tray,
+            set_terminal_font_size,
+            open_external
         ])
         .setup(|app| {
             // Pencere gizli açılır; frontend hazır olunca JS `show()` çağırır (gri boş
@@ -1370,4 +1410,28 @@ fn main() {
         })
         .run(tauri::generate_context!())
         .expect("error while running Portal");
+}
+
+#[cfg(test)]
+mod tests {
+    use super::checked_web_url;
+
+    #[test]
+    fn only_http_and_https_links_are_opened() {
+        assert!(checked_web_url("https://example.com/a?b=c").is_ok());
+        assert!(checked_web_url("http://10.0.0.5:8080/").is_ok());
+        assert!(checked_web_url("HTTPS://example.com").is_ok());
+
+        // Uzak sunucu bunları çıktısına basabilir; hiçbiri OS'e gitmez.
+        for bad in [
+            "file:///C:/Windows/notepad.exe",
+            "javascript:void(0)",
+            "custom-handler:/id",
+            "  https://example.com",
+        ] {
+            let err = checked_web_url(bad).unwrap_err();
+            // Hata denenen değeri gösterir (kullanıcı neyin reddedildiğini görür).
+            assert!(err.contains(bad), "got: {err}");
+        }
+    }
 }

@@ -33,6 +33,8 @@ export interface Bootstrap {
   minimize_to_tray: boolean;
   // Vault şifreli mi → kimlik "hatırlanabilir" mi (profilsiz modda vault düz metin).
   can_remember: boolean;
+  // Terminal yazı boyutu (px) — uygulama geneli, Ctrl +/- ile değişir.
+  terminal_font_size: number;
   hosts: Host[];
   folders: Folder[];
 }

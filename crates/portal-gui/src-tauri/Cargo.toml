@@ -27,3 +27,6 @@ base64 = "0.22"
 zeroize = "1"
 # Tek çekirdek: tüm domain mantığı burada. UI yalnız çağırır.
 portal-core = { path = "../../portal-core" }
+# Terminalde tıklanan URL PLATFORM GÜVENLİ açılsın (kabuk yok, tırnak/enjeksiyon
+# sorunu yok). Açmadan önce kullanıcıya onay sorulur; eklenti yalnızca açar.
+tauri-plugin-opener = "2.5.4"

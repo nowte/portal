@@ -30,6 +30,11 @@ pub struct Config {
     /// BYOS senkron hedef klasörü — şifreli vault buraya kopyalanır (yoksa senkron kapalı).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub sync_dir: Option<std::path::PathBuf>,
+    /// Terminal yazı boyutu (px). Host başına değil, uygulama geneli — bir kez
+    /// ayarlanır, her terminalde geçerlidir. Yoksa varsayılan
+    /// [`crate::store::TERM_FONT_DEFAULT`].
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub terminal_font_size: Option<u8>,
     /// Yerel profillerin **hassas olmayan** indeksi (ad, kilit bayrakları). Her profilin
     /// asıl verisi kendi şifreli `vault.portal`'ındadır; ama bu indeks kilit açılmadan
     /// okunabilmeli (hangi profil var, parola gerekir mi). Bkz. docs/ARCHITECTURE.md §5.
@@ -112,6 +117,7 @@ mod tests {
             onboarded: true,
             minimize_to_tray: true,
             sync_dir: Some(std::path::PathBuf::from("/backups/portal")),
+            terminal_font_size: Some(16),
             profiles: vec![profile],
         };
 
