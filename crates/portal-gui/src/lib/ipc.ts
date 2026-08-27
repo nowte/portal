@@ -202,6 +202,10 @@ export const setMinimizeToTray = (enabled: boolean): Promise<void> =>
 export const setNotifyUptime = (enabled: boolean): Promise<void> =>
   invoke("set_notify_uptime", { enabled });
 
+/** Görev çubuğu + tepsi rozetini uygulama içi bildirim sayısına eşitler. */
+export const setAlertBadge = (count: number): Promise<void> =>
+  invoke("set_alert_badge", { count });
+
 /** Bir monitör düşünce/geri gelince Rust yayınlar (yalnız DEĞİŞİMDE). */
 export const onMonitorChanged = (cb: (m: MonitorChanged) => void): Promise<UnlistenFn> =>
   listen<MonitorChanged>("portal://monitor-changed", (e) => cb(e.payload));

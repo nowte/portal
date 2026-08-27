@@ -1178,6 +1178,17 @@ fn check_monitor_now(state: State<'_, AppState>, id: MonitorId) -> Result<(), St
     Ok(())
 }
 
+/// Görev çubuğu + tepsi rozetini uygulama içi bildirim sayısına eşitler.
+///
+/// Sayının TEK kaynağı destenin kendisi: Rust'ta ayrı bir sayaç tutulsaydı iki
+/// sayı er geç ayrışırdı (biri sönerken öteki yapışırdı — bir kez yaşandı).
+/// Değer arayüzden geliyor, o yüzden makul bir tavana kırpılır.
+#[tauri::command]
+fn set_alert_badge(app: AppHandle, count: usize) -> Result<(), String> {
+    set_badge(&app, count.min(99));
+    Ok(())
+}
+
 /// Uptime bildirimlerini açar/kapatır.
 #[tauri::command]
 fn set_notify_uptime(state: State<'_, AppState>, enabled: bool) -> Result<(), String> {
@@ -1311,10 +1322,6 @@ fn pump_uptime(app: AppHandle) {
 
     let mut dirty = false;
     let mut last_save = std::time::Instant::now();
-    // Rozet SAYI DEĞİŞİNCE güncellenir. Her turda yeniden çizip Windows'a
-    // vermek 250ms'de bir boşa iş olurdu; sayıyı karşılaştırmak da monitör
-    // ekleme/silme/duraklatmayı ayrıca kancalamadan kapsıyor.
-    let mut shown = usize::MAX;
     loop {
         let state = app.state::<AppState>();
         while let Some(UptimeEvent::Checked(result)) =
@@ -1339,12 +1346,6 @@ fn pump_uptime(app: AppHandle) {
                 notify_state_change(&app, monitor_id, before, after, reason);
             }
             let _ = app.emit("portal://uptime", UptimeMsg { monitor_id, up });
-        }
-
-        let count = down_count(&app);
-        if count != shown {
-            shown = count;
-            set_badge(&app, count);
         }
 
         if dirty && last_save.elapsed() >= SAVE_EVERY {
@@ -1493,31 +1494,6 @@ fn icon_with_badge(base: &tauri::image::Image<'_>, count: usize) -> tauri::image
     tauri::image::Image::new_owned(px, w, h)
 }
 
-/// Kesintide olan monitör sayısı — durum çubuğundaki "N down" ile AYNI sayı.
-///
-/// İki kilit ASLA aynı anda tutulmaz (önce liste alınır, kilit bırakılır, sonra
-/// geçmişe bakılır): ters sırada kilitleyen bir yol eklenirse kilitlenme olurdu.
-fn down_count(app: &AppHandle) -> usize {
-    let state = app.state::<AppState>();
-    let ids: Vec<MonitorId> = {
-        let Ok(store) = state.lock() else {
-            return 0;
-        };
-        store
-            .monitors()
-            .iter()
-            .filter(|m| m.enabled)
-            .map(|m| m.id)
-            .collect()
-    };
-    let Ok(log) = state.uptime_log.lock() else {
-        return 0;
-    };
-    ids.iter()
-        .filter(|id| monitor_state(&log, **id) == MonitorState::Down)
-        .count()
-}
-
 /// Görev çubuğu + tepsi rozetini sayıyla günceller (0 → rozet kalkar).
 ///
 /// İki yüzey birden: pencere açıkken görev çubuğu düğmesi vardır, tepsiye
@@ -1541,12 +1517,10 @@ fn set_badge(app: &AppHandle, count: usize) {
     } else {
         base.clone()
     }));
-    let _ = tray.set_tooltip(Some(&if count == 1 {
-        "Portal — 1 monitor is down".to_string()
-    } else if count > 1 {
-        format!("Portal — {count} monitors are down")
-    } else {
-        "Portal".to_string()
+    let _ = tray.set_tooltip(Some(&match count {
+        0 => "Portal".to_string(),
+        1 => "Portal — 1 new alert".to_string(),
+        n => format!("Portal — {n} new alerts"),
     }));
 }
 
@@ -1722,6 +1696,7 @@ fn main() {
             check_monitor_now,
             set_minimize_to_tray,
             set_notify_uptime,
+            set_alert_badge,
             set_terminal_font_size,
             open_external
         ])

@@ -2,6 +2,7 @@
 // mono teknik segmentler ve seçili host'un canlı bağlantı durumu.
 
 import { GripVertical } from "lucide-react";
+import { StateIcon } from "./StateIcon";
 import { usePortal } from "../context";
 import { resetLayout, showSide } from "../dock/dock";
 import { downMonitors, useMonitors } from "../lib/uptime";
@@ -33,7 +34,10 @@ export function StatusBar() {
       {down.length > 0 && (
         <>
           <button onClick={() => showSide("uptime")} title="Open Uptime">
-            <span className="dot err" />
+            {/* Düşen monitörün simgesi TEK yerden gelir (StateIcon): burada
+                ayrı bir kırmızı nokta duruyordu, aynı olayın dördüncü gösterimi
+                oluyordu ve biçim taşımıyordu — yalnız renk. */}
+            <StateIcon state="down" />
             <span className="sb-mono">
               {down.length} down
             </span>

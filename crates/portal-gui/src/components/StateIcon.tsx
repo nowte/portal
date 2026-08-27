@@ -1,11 +1,18 @@
 // Uptime durum simgesi — up / down / henüz bilinmiyor.
 //
 // Neden nokta değil de simge: nokta yalnız RENKLE konuşuyordu (§9 noktanın
-// yanına bir halka koyuyor ama biçim aynı kalıyor). Burada biçim de değişiyor —
-// tik / ünlem / kesikli daire — yani ekran siyah-beyaz basılsa bile durum
+// yanına bir halka koyuyor ama biçim aynı kalıyor). Burada SİLUET de değişiyor:
+// daire-tik / ÜÇGEN / kesikli daire — ekran siyah-beyaz basılsa bile durum
 // okunur. Renk hâlâ var, ama tek taşıyıcı değil.
+//
+// Down neden üçgen: önce CircleAlert'tı ve up da CircleCheck olduğu için ikisi
+// de DAİREYDİ — 16px'te siluet ayırt etmiyor, geriye yalnız renk kalıyordu,
+// yani bu dosyanın kendi iddiası tutmuyordu. Ayrıca Home'un "Attention needed"
+// listesi düşen monitör için zaten TriangleAlert çiziyordu (HomePanel), yani
+// aynı durumun iki simgesi vardı. Üçgene geçmek ikisini de kapatıyor ve
+// CircleAlert'ı tek işine bırakıyor: satır içi hata (ErrorNote).
 
-import { CircleAlert, CircleCheck, CircleDashed } from "lucide-react";
+import { CircleCheck, CircleDashed, TriangleAlert } from "lucide-react";
 import type { MonitorState } from "../lib/types";
 
 // `label`: aynı üç biçim bağlantı durumu için de kullanılır (dock sekmesi) — orada
@@ -43,7 +50,7 @@ export function StateIcon({
   }
   if (state === "down") {
     return (
-      <CircleAlert
+      <TriangleAlert
         className="st-i st-down"
         size={size}
         strokeWidth={1.75}

@@ -395,6 +395,23 @@ input, textarea, select { font: inherit; }
   from { opacity: 0; transform: translateY(-4px); }
   to   { opacity: 1; transform: none; }
 }
+/* Duyuru şeridi: sağ alt köşeden İÇERİ kayar. Neden p-rise değil: o 4px'lik
+   yükseliş bir panelin yerine oturması için doğru, ama köşede beliren bir
+   şerit için görülmüyor bile (ölçüldü). Yön köşeyi işaret ediyor — şerit
+   ekranın kenarından geldiğini söylüyor. Çıkışta aynı hareket ters oynar. */
+@keyframes p-note-in {
+  from { opacity: 0; transform: translate(20px, 8px) scale(0.96); }
+  to   { opacity: 1; transform: none; }
+}
+/* Çıkış AYRI bir ad olmak zorunda: `reverse` ile aynı adı kullanmak işe
+   yaramıyor — CSS animasyonu yalnız AD değişince yeniden başlar, aksi hâlde
+   tarayıcı bitmiş animasyonun özelliklerini güncellemekle kalıyor ve şerit
+   animasyonsuz kayboluyor (ölçüldü). */
+@keyframes p-note-out {
+  from { opacity: 1; transform: none; }
+  to   { opacity: 0; transform: translate(20px, 8px) scale(0.96); }
+}
+
 /* Files: birak-hedefi seridi + aktif transferin 30 derece taramasi. */
 @keyframes p-drop-in { from { opacity: 0; transform: translateY(100%); } to { opacity: 1; transform: none; } }
 @keyframes p-hatch { to { transform: translateX(12px); } }
@@ -2727,13 +2744,15 @@ input, textarea, select { font: inherit; }
   flex: none;
   border-radius: var(--r-m); background: var(--panel-2); box-shadow: var(--shadow);
   padding: var(--sp-3);
-  /* Giriş HAFİF: 4px + fade (§3 p-rise) — tam yükseklik kayması bir köşe
-     şeridi için ağır kaçıyordu. */
-  animation: p-rise var(--dur-panel) var(--ease-out);
+  /* Giriş: köşeden içeri kayar (§3 p-note-in). */
+  animation: p-note-in var(--dur-panel) var(--ease-out);
 }
-/* Çıkış girişten hızlı (§1 --dur-exit): aynı hareket ters yönde, yeni
-   keyframe açmadan. `forwards` olmadan şerit son karede geri belirirdi. */
-.note.leaving { animation: p-rise var(--dur-exit) var(--ease-out) reverse forwards; }
+/* Çıkış girişten hızlı (§1 --dur-exit). `forwards` olmadan şerit son karede
+   geri belirirdi. */
+.note.leaving { animation: p-note-out var(--dur-exit) var(--ease-out) forwards; }
+/* Gölge katmanlar kendi başlarına girmez: destenin parçasıdırlar, ön kartla
+   birlikte belirirler. Ayrı ayrı kayarlarsa deste dağılmış gibi görünüyor. */
+.deck:not(.open) .note-shadow { animation: p-fade var(--dur-panel) var(--ease-out); }
 .note-row { display: flex; align-items: center; gap: var(--sp-2); }
 .note-t { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
 .note-t b { font-size: var(--fs-2); font-weight: 600; }
