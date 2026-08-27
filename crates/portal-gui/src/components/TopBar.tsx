@@ -8,6 +8,7 @@ import { openCommandPalette } from "./CommandPalette";
 import { openSettings } from "./Settings";
 import { openAbout } from "./About";
 import { APP_VERSION } from "../lib/version";
+import { useUpdate } from "../lib/update";
 
 // Native titlebar kapalı (decorations:false). Sürükleme yalnız butonsuz alanlarda
 // (brand / workspace / spacer) → data-tauri-drag-region; butonlar hep tıklanır.
@@ -36,6 +37,7 @@ const GLYPH = { viewBox: "0 0 10 10", width: 10, height: 10, fill: "none",
 
 export function TopBar() {
   const { boot } = usePortal();
+  const upd = useUpdate();
   return (
     <header className="topbar" data-tauri-drag-region>
       <div className="tb-brand" data-tauri-drag-region>
@@ -68,9 +70,21 @@ export function TopBar() {
         )}
         <ChevronDown size={16} strokeWidth={1.75} />
       </button>
-      <span className="tb-ver" data-tauri-drag-region>
-        {APP_VERSION}
-      </span>
+      {/* Sürüm normalde sessiz bir etikettir; yeni sürüm çıktığında aynı yer
+          tıklanır olur ve About'u açar (§2.1: okunacak metin --faint olamaz). */}
+      {upd.status === "found" ? (
+        <button
+          className="tb-ver tb-ver-new"
+          title={`Portal ${upd.version} is available — see About for the download link`}
+          onClick={() => openAbout("about")}
+        >
+          v{upd.version} available
+        </button>
+      ) : (
+        <span className="tb-ver" data-tauri-drag-region>
+          {APP_VERSION}
+        </span>
+      )}
 
       <div className="tb-spacer" data-tauri-drag-region />
 

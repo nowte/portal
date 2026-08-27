@@ -24,6 +24,7 @@ pub mod store;
 pub mod sync;
 pub mod teaching;
 pub mod tunnel;
+pub mod update;
 pub mod uptime;
 pub mod uptime_log;
 pub mod vault;
@@ -52,6 +53,7 @@ pub use store::{ImportSummary, Store, TERM_FONT_DEFAULT, TERM_FONT_MAX, TERM_FON
 pub use sync::{SyncOutcome, SyncStatus};
 pub use teaching::{TeachingCard, Topic};
 pub use tunnel::{TunnelEvent, TunnelKind, TunnelSession, TunnelSpec};
+pub use update::RELEASES_PAGE;
 pub use uptime::{check_once, UptimeEvent, UptimeService};
 pub use uptime_log::{CheckResult, DayStat, MonitorHistory, MonitorState, UptimeLog};
 pub use vault::crypto::{self, CryptoError, Header, OpenKey, SealKey, VaultCipher, WrapMethod};

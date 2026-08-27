@@ -202,6 +202,15 @@ export const setMinimizeToTray = (enabled: boolean): Promise<void> =>
 export const setNotifyUptime = (enabled: boolean): Promise<void> =>
   invoke("set_notify_uptime", { enabled });
 
+/** Açılışta yeni sürüm kontrolü yapılsın mı. */
+export const setCheckUpdates = (enabled: boolean): Promise<void> =>
+  invoke("set_check_updates", { enabled });
+
+/** Daha yeni bir Portal sürümü varsa etiketi (`1.1.0`), yoksa null. Ayar
+ *  kapalıysa Rust tarafı istek atmadan null döner. */
+export const checkUpdate = (): Promise<string | null> =>
+  invoke<string | null>("check_update");
+
 /** Görev çubuğu + tepsi rozetini uygulama içi bildirim sayısına eşitler. */
 export const setAlertBadge = (count: number): Promise<void> =>
   invoke("set_alert_badge", { count });

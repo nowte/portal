@@ -478,6 +478,21 @@ impl Store {
         self.config.save(&self.paths.config_file())
     }
 
+    /// Açılışta güncelleme kontrolü yapılsın mı (varsayılan: evet).
+    #[must_use]
+    pub fn check_updates(&self) -> bool {
+        self.config.check_updates.unwrap_or(true)
+    }
+
+    /// Güncelleme kontrolünü açar/kapatır ve config'i yazar.
+    ///
+    /// # Errors
+    /// Yazma başarısız olursa hata döner.
+    pub fn set_check_updates(&mut self, enabled: bool) -> Result<()> {
+        self.config.check_updates = Some(enabled);
+        self.config.save(&self.paths.config_file())
+    }
+
     /// Terminal yazı boyutu (px) — uygulama geneli.
     #[must_use]
     pub fn terminal_font_size(&self) -> u8 {

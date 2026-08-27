@@ -41,6 +41,8 @@ export function Settings() {
   const [tray, setTray] = useState(false);
   // Aynı gerekçe: bildirim anahtarı da yerelde tutulur.
   const [notify, setNotify] = useState(true);
+  // Güncelleme kontrolü anahtarı — Portal'ın kendi başına ağa çıktığı tek yer.
+  const [updates, setUpdates] = useState(true);
 
   const loadProfiles = useCallback(() => {
     void ipc.listProfiles().then(setProfiles).catch(() => undefined);
@@ -83,6 +85,16 @@ export function Settings() {
     }
   }, [notify]);
 
+  const toggleUpdates = useCallback(async (): Promise<void> => {
+    const next = !updates;
+    setUpdates(next);
+    try {
+      await ipc.setCheckUpdates(next);
+    } catch {
+      setUpdates(!next); // yazılamadıysa kutucuk gerçeği göstersin
+    }
+  }, [updates]);
+
   // Açılınca / sekme değişince ilgili veriyi tazele.
   useEffect(() => {
     if (!open) return;
@@ -91,8 +103,17 @@ export function Settings() {
     if (tab === "appearance") {
       setTray(boot?.minimize_to_tray ?? false);
       setNotify(boot?.notify_uptime ?? true);
+      setUpdates(boot?.check_updates ?? true);
     }
-  }, [open, tab, boot?.minimize_to_tray, boot?.notify_uptime, loadProfiles, loadSync]);
+  }, [
+    open,
+    tab,
+    boot?.minimize_to_tray,
+    boot?.notify_uptime,
+    boot?.check_updates,
+    loadProfiles,
+    loadSync,
+  ]);
 
   // Esc + odak tuzağı + odak iadesi: lib/modal.ts (tek kaynak).
   useModal(boxRef, () => setOpen(false), open);
@@ -244,6 +265,27 @@ export function Settings() {
                 </span>
                 <span>
                   <b>Notify me when a monitor goes down</b> — and when it recovers
+                </span>
+              </button>
+
+              <h3 className="set-h">Updates</h3>
+              <p className="set-sub">
+                Portal has no update server. With this on, it asks github.com once per
+                launch whether a newer release exists and shows the version in the title
+                bar. The request carries nothing about you — no identifier, no account,
+                not even which version you are running; the comparison happens here. It
+                never downloads or installs anything. You can also check by hand any time
+                from About Portal.
+              </p>
+              <button
+                className={"hf-check lit" + (updates ? " on" : "")}
+                onClick={() => void toggleUpdates()}
+              >
+                <span className="hf-box">
+                  <Check size={16} strokeWidth={2} />
+                </span>
+                <span>
+                  <b>Check for a new version on launch</b> — one request to github.com
                 </span>
               </button>
             </section>

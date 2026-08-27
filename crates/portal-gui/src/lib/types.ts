@@ -37,6 +37,8 @@ export interface Bootstrap {
   terminal_font_size: number;
   // Monitör düşüp kalkınca masaüstü bildirimi gönderilsin mi.
   notify_uptime: boolean;
+  // Açılışta yeni sürüm var mı diye bakılsın mı (Settings ▸ Appearance ▸ Updates).
+  check_updates: boolean;
   hosts: Host[];
   folders: Folder[];
 }

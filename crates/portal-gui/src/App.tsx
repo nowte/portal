@@ -16,13 +16,20 @@ import { About } from "./components/About";
 import { openServerSearch } from "./components/ServerSearch";
 import { DockLayout } from "./dock/DockLayout";
 import { resetLayout, toggleSidebar } from "./dock/dock";
+import { checkOnLaunch } from "./lib/update";
 
 // loading → reveal (loading solar + app belirir, çapraz geçiş) → done (loading kalkar)
 type Phase = "loading" | "reveal" | "done";
 
 function Shell() {
-  const { ready, onboarded, locked } = usePortal();
+  const { ready, onboarded, locked, boot } = usePortal();
   const [phase, setPhase] = useState<Phase>("loading");
+
+  // Güncelleme kontrolü YALNIZ kilit açıldıktan sonra: onboarding/kilit ekranı
+  // ağa çıkmaz. Oturumda bir kez (checkOnLaunch kendi bayrağını tutar).
+  useEffect(() => {
+    if (ready && onboarded && !locked) checkOnLaunch(boot?.check_updates ?? false);
+  }, [ready, onboarded, locked, boot?.check_updates]);
 
   const startReveal = useCallback(() => setPhase("reveal"), []);
 

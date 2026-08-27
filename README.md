@@ -271,23 +271,24 @@ point of the project and the hardest thing to see from the inside.
 
 ## Privacy, as a table instead of a slogan
 
-Portal makes exactly three kinds of outbound connection, and you cause all three:
+Portal makes exactly four kinds of outbound connection, and you can see all four:
 
 | Connection | When | To where |
 | --- | --- | --- |
 | SSH / SFTP | You connect to a host | The address **you** typed |
 | HTTP(S) / TCP | An uptime monitor runs | The target **you** added |
+| HTTPS | Once per launch, to ask whether a newer Portal was released | api.github.com |
 | *(planned)* AI provider | Only if you turn AI on **and** choose a cloud model instead of a local one | That provider |
 
 That is the whole list for the running application. **The installer** has one more:
 if your machine has no WebView2 runtime (Windows 11 ships with it; some Windows 10
 installs do not), setup downloads it from Microsoft once. Portal itself never does.
 
-No update pings, no crash reporting by default, no analytics,
-no license check, no account. Telemetry exists as an off-by-default opt-in and never
-includes host names, addresses, commands or file names.
+No crash reporting by default, no analytics, no license check, no account.
+Telemetry exists as an off-by-default opt-in and never includes host names,
+addresses, commands or file names.
 
-Two things we tell you rather than hide:
+Three things we tell you rather than hide:
 
 1. **The vault file's header is readable without your password.** Everything you put
    in the vault — hosts, addresses, usernames, keys, passwords — is encrypted. The
@@ -305,6 +306,13 @@ Two things we tell you rather than hide:
    points above are what they learn.
 2. Uptime checks stop when the app is closed. The tray option narrows that gap; it
    does not remove it.
+3. **The update check is a real outbound request, and it is on by default.** Once per
+   launch — after you unlock, never from the lock screen — Portal asks github.com for
+   the latest release tag. The request carries no identifier, no account and not even
+   which version you are running; the comparison happens on your machine, and nothing
+   is ever downloaded or installed for you. What github.com learns is your IP address
+   and that somebody asked. Turn it off in **Settings ▸ Appearance ▸ Updates**, and
+   check by hand from **About Portal** whenever you want.
 
 Security reports: see [SECURITY.md](SECURITY.md). Please don't open a public issue.
 

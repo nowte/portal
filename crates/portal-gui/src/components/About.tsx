@@ -2,10 +2,11 @@
 // düğmelerinden açılır. İkisi de AYNI modal gövdesinden doğar (§4 primitive),
 // yalnız içerikleri farklı.
 //
-// Neden dış bağlantı açmıyoruz: uygulamada `shell`/`opener` eklentisi yok ve
-// Portal'ın tezi çevrimdışı çalışmak. Adres metin olarak veriliyor + "Copy"
-// düğmesi; kullanıcı kendi tarayıcısında açar. Uydurma URL yok — tek adres
-// Cargo.toml'daki `repository` alanıdır.
+// Neden dış bağlantı açmıyoruz: Portal'ın tezi çevrimdışı çalışmak. Adres metin
+// olarak veriliyor + "Copy" düğmesi; kullanıcı kendi tarayıcısında açar. Uydurma
+// URL yok — tek adres Cargo.toml'daki `repository` alanıdır. (P8'de gelen
+// `open_external` terminalin bağlantıları içindir, burası ondan önce vardı ve
+// kopyala-yapıştır kalıyor: adresi görmeden bir yere gitmiyorsun.)
 //
 // Modül-düzeyi köprü (prop-drilling'siz): openAbout("about" | "support").
 
@@ -14,6 +15,8 @@ import { Check, Copy, X } from "lucide-react";
 import { usePortal } from "../context";
 import { APP_VERSION } from "../lib/version";
 import { useModal } from "../lib/modal";
+import { SpinButton } from "./SpinButton";
+import { checkNow, useUpdate } from "../lib/update";
 
 export type AboutTab = "about" | "support";
 
@@ -31,6 +34,38 @@ function close(): void {
 }
 
 const REPO = "https://github.com/nowte/portal";
+const RELEASES = `${REPO}/releases/latest`;
+
+// Güncelleme satırı: durum + "Check now". Sürüm karşılaştırması Rust'ta, burada
+// yalnız çizim. İndirme yok — yeni sürüm varsa alttaki Copy düğmesi releases
+// adresini verir, kullanıcı kendi tarayıcısında indirir.
+function UpdateLine() {
+  const upd = useUpdate();
+  return (
+    <span className="about-upd">
+      <span className={"about-upd-t" + (upd.status === "found" ? " lit" : "")}>
+        {upd.status === "checking"
+          ? "Checking…"
+          : upd.status === "found"
+            ? `Portal ${upd.version} is out — ${RELEASES}`
+            : upd.status === "current"
+              ? "Up to date"
+              : upd.status === "error"
+                ? upd.message
+                : "Not checked"}
+      </span>
+      <SpinButton
+        className="btn-ghost"
+        title="Ask github.com whether a newer Portal has been released"
+        disabled={upd.status === "checking"}
+        onRun={() => void checkNow()}
+      >
+        {" "}
+        Check now
+      </SpinButton>
+    </span>
+  );
+}
 
 function CopyLink({ value }: { value: string }) {
   const [done, setDone] = useState(false);
@@ -63,6 +98,7 @@ export function About() {
     () => open,
   );
   const { boot } = usePortal();
+  const upd = useUpdate();
   const boxRef = useRef<HTMLDivElement>(null);
 
   // Esc + odak tuzağı + odak iadesi: lib/modal.ts (tek kaynak).
@@ -130,6 +166,12 @@ export function About() {
                   <span className="about-v mono">{APP_VERSION}</span>
                 </div>
                 <div className="about-row">
+                  <span className="about-k">Updates</span>
+                  <span className="about-v">
+                    <UpdateLine />
+                  </span>
+                </div>
+                <div className="about-row">
                   <span className="about-k">Profile</span>
                   <span className="about-v mono">{boot?.profile ?? "local · no account"}</span>
                 </div>
@@ -158,7 +200,9 @@ export function About() {
         </div>
 
         <div className="dlg-foot">
-          <CopyLink value={support ? `${REPO}/issues` : REPO} />
+          <CopyLink
+            value={support ? `${REPO}/issues` : upd.status === "found" ? RELEASES : REPO}
+          />
           <button className="btn-primary" onClick={close}>
             <span>Close</span>
           </button>

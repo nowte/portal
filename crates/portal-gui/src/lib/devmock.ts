@@ -43,6 +43,8 @@ const EMPTY_BOOT = {
   can_remember: false,
   terminal_font_size: 13,
   notify_uptime: true,
+  // Önizlemede ağ yok: `check_update` mock'ta null döner → "up to date".
+  check_updates: true,
   hosts: [] as unknown[],
   folders: [] as unknown[],
 };
@@ -86,6 +88,8 @@ function applyOverrides(): void {
     boot.hosts = hosts;
     boot.profile = "preview";
     boot.can_remember = true; // demo profili parolalı sayılır
+    // Yeni-sürüm rozeti başka türlü hiç görünmez (önizlemede ağ yok).
+    RESULTS.check_update = "1.1.0";
     // Yerel panel: sürükle-bırak ve satır davranışı tarayıcıda incelenebilsin diye
     // birkaç örnek giriş (yalnız ?mock=demo).
     RESULTS.local_home = "C:\\Users\\you";

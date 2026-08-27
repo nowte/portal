@@ -63,6 +63,10 @@ pub enum Error {
     #[error("{0}")]
     Sync(String),
 
+    /// Güncelleme kontrolü (ağ/yanıt) hatası. Kullanıcıya dönük → İngilizce.
+    #[error("{0}")]
+    Update(String),
+
     /// Platforma özgü veri/konfig dizinleri çözülemedi (ör. home dizini yok).
     #[error("Portal couldn't work out where to keep its data on this machine. Check that your user profile folder is reachable.")]
     NoProjectDirs,

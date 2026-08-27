@@ -39,6 +39,12 @@ pub struct Config {
     /// Yoksa AÇIK sayılır — bildirim istemeyen kapatır, isteyen ayar aramaz.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub notify_uptime: Option<bool>,
+    /// Açılışta yeni sürüm var mı diye github.com'a tek bir istek atılsın mı.
+    /// Yoksa AÇIK sayılır ([`crate::store::Store::check_updates`]) — güncelleme
+    /// duymayan kullanıcı eski sürümde kalır. İstek hiçbir tanımlayıcı taşımaz;
+    /// bkz. [`crate::update`].
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub check_updates: Option<bool>,
     /// Yerel profillerin **hassas olmayan** indeksi (ad, kilit bayrakları). Her profilin
     /// asıl verisi kendi şifreli `vault.portal`'ındadır; ama bu indeks kilit açılmadan
     /// okunabilmeli (hangi profil var, parola gerekir mi). Bkz. docs/ARCHITECTURE.md §5.
@@ -123,6 +129,7 @@ mod tests {
             sync_dir: Some(std::path::PathBuf::from("/backups/portal")),
             terminal_font_size: Some(16),
             notify_uptime: Some(false),
+            check_updates: Some(false),
             profiles: vec![profile],
         };
 

@@ -931,6 +931,11 @@ input, textarea, select { font: inherit; }
 .tb-ws b { color: var(--text); font-weight: 500; }
 @media (hover: hover) and (pointer: fine) { .tb-ws:hover { background: var(--panel); } }
 .tb-ver { font-family: var(--mono); font-size: var(--fs-1); color: var(--faint); padding: 0 var(--sp-1); }
+/* Yeni sürüm çıktığında aynı yer tıklanır olur. --faint okunacak metinde
+   kullanılamaz (§2.1) → duyuru --text ile gelir. Renk tek taşıyıcı değil:
+   metnin kendisi de değişiyor ("v1.0.0" → "v1.1.0 available"). */
+.tb-ver-new { color: var(--text); font-weight: 500; border-radius: var(--r-s); }
+.tb-ver-new:hover { background: var(--panel-2); }
 
 .tb-spacer { flex: 1 1 auto; min-width: var(--sp-2); }
 .tb-right { display: flex; align-items: center; gap: var(--sp-1); flex: 0 0 auto; }
@@ -2682,6 +2687,11 @@ input, textarea, select { font: inherit; }
 .about-row:last-child { border-bottom: 0; }
 .about-k { width: 96px; flex: none; font-size: var(--fs-2); font-weight: 600; color: var(--dim); }
 .about-v { flex: 1; min-width: 0; font-size: var(--fs-2); color: var(--text); word-break: break-all; }
+/* Güncelleme satırı: durum solda, "Check now" sağda. Satır dar pencerede
+   sarmalanır — düğme adresi ittirip taşırmasın. */
+.about-upd { display: flex; align-items: center; gap: var(--sp-2); flex-wrap: wrap; }
+.about-upd-t { flex: 1; min-width: 0; color: var(--dim); }
+.about-upd-t.lit { color: var(--text); font-weight: 500; }
 .about-note { font-size: var(--fs-2); color: var(--dim); line-height: 1.6; margin: var(--sp-3) 0 0; }
 
 .dialog .dlg-foot { justify-content: space-between; }

@@ -254,6 +254,8 @@ struct Bootstrap {
     terminal_font_size: u8,
     /// Monitör düşüp kalkınca masaüstü bildirimi gönderilsin mi.
     notify_uptime: bool,
+    /// Açılışta yeni sürüm var mı diye bakılsın mı (Settings ▸ Appearance ▸ Updates).
+    check_updates: bool,
     hosts: Vec<Host>,
     folders: Vec<Folder>,
 }
@@ -272,6 +274,7 @@ fn bootstrap_of(s: &Store) -> Bootstrap {
         can_remember: s.vault_is_encrypted(),
         terminal_font_size: s.terminal_font_size(),
         notify_uptime: s.notify_uptime(),
+        check_updates: s.check_updates(),
         hosts: s.hosts().to_vec(),
         folders: s.folders().to_vec(),
     }
@@ -1198,6 +1201,34 @@ fn set_notify_uptime(state: State<'_, AppState>, enabled: bool) -> Result<(), St
         .map_err(|e| e.to_string())
 }
 
+/// Açılışta güncelleme kontrolünü açar/kapatır.
+#[tauri::command]
+fn set_check_updates(state: State<'_, AppState>, enabled: bool) -> Result<(), String> {
+    state
+        .lock()?
+        .set_check_updates(enabled)
+        .map_err(|e| e.to_string())
+}
+
+/// Daha yeni bir Portal sürümü var mı; varsa etiketi (`1.1.0`), yoksa `None`.
+///
+/// Dosyadaki TEK `async` komut: kontrol bloklayan bir HTTP isteği (10 sn tavan) ve
+/// senkron komut ana iş parçacığında koşar → arayüz donardı. Ayar kontrolü
+/// çağıranda DEĞİL burada: kapalıysa istek hiç kurulmaz.
+///
+/// Sürüm `tauri.conf.json`'dan gelir (tek kaynak), koda yazılmaz.
+#[tauri::command]
+async fn check_update(app: AppHandle, state: State<'_, AppState>) -> Result<Option<String>, String> {
+    if !state.lock()?.check_updates() {
+        return Ok(None);
+    }
+    let current = app.package_info().version.to_string();
+    tauri::async_runtime::spawn_blocking(move || portal_core::update::check(&current))
+        .await
+        .map_err(|e| format!("The update check didn't finish: {e}. Try again."))?
+        .map_err(|e| e.to_string())
+}
+
 /// Pencere kapatılınca tepsiye inme ayarını değiştirir.
 #[tauri::command]
 fn set_minimize_to_tray(state: State<'_, AppState>, enabled: bool) -> Result<(), String> {
@@ -1696,6 +1727,8 @@ fn main() {
             check_monitor_now,
             set_minimize_to_tray,
             set_notify_uptime,
+            set_check_updates,
+            check_update,
             set_alert_badge,
             set_terminal_font_size,
             open_external
