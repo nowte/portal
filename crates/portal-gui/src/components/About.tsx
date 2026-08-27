@@ -2,17 +2,19 @@
 // düğmelerinden açılır. İkisi de AYNI modal gövdesinden doğar (§4 primitive),
 // yalnız içerikleri farklı.
 //
-// Neden dış bağlantı açmıyoruz: Portal'ın tezi çevrimdışı çalışmak. Adres metin
-// olarak veriliyor + "Copy" düğmesi; kullanıcı kendi tarayıcısında açar. Uydurma
-// URL yok — tek adres Cargo.toml'daki `repository` alanıdır. (P8'de gelen
-// `open_external` terminalin bağlantıları içindir, burası ondan önce vardı ve
-// kopyala-yapıştır kalıyor: adresi görmeden bir yere gitmiyorsun.)
+// Adresler METİN olarak veriliyor + "Copy" düğmesi: uydurma URL yok, tek adres
+// Cargo.toml'daki `repository` alanı. Tek istisna güncelleme satırı — orada
+// adres tıklanır (`open_external`), çünkü kullanıcının oraya GİTMESİ gerekiyor
+// ve düğmenin etiketi zaten adresin kendisi (nereye gittiğini görmeden
+// tıklamıyor). URL ağdan DEĞİL, buradaki sabitten geliyor — P8'in terminal
+// bağlantılarındaki onay diyaloğu bu yüzden gerekmez.
 //
 // Modül-düzeyi köprü (prop-drilling'siz): openAbout("about" | "support").
 
 import { useEffect, useRef, useState, useSyncExternalStore } from "react";
-import { Check, Copy, X } from "lucide-react";
+import { Check, Copy, ExternalLink, X } from "lucide-react";
 import { usePortal } from "../context";
+import * as ipc from "../lib/ipc";
 import { APP_VERSION } from "../lib/version";
 import { useModal } from "../lib/modal";
 import { SpinButton } from "./SpinButton";
@@ -47,7 +49,7 @@ function UpdateLine() {
         {upd.status === "checking"
           ? "Checking…"
           : upd.status === "found"
-            ? `Portal ${upd.version} is out — ${RELEASES}`
+            ? `Portal ${upd.version} is out`
             : upd.status === "current"
               ? "Up to date"
               : upd.status === "error"
@@ -63,6 +65,19 @@ function UpdateLine() {
         {" "}
         Check now
       </SpinButton>
+      {/* Adres TAM GENİŞLİKTE alt satıra sarar (DOM'da düğmeden SONRA, flex-wrap
+          sırayı okur): düğmenin yanına sıkışınca kelime ortasından kırılıyordu.
+          Tıklanır — güncellemenin yolu bu. */}
+      {upd.status === "found" && (
+        <button
+          className="about-upd-url mono"
+          title={`Open ${RELEASES} in your browser`}
+          onClick={() => void ipc.openExternal(RELEASES).catch(() => undefined)}
+        >
+          <ExternalLink size={16} strokeWidth={1.75} />
+          <span>{RELEASES}</span>
+        </button>
+      )}
     </span>
   );
 }

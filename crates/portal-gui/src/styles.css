@@ -932,10 +932,19 @@ input, textarea, select { font: inherit; }
 @media (hover: hover) and (pointer: fine) { .tb-ws:hover { background: var(--panel); } }
 .tb-ver { font-family: var(--mono); font-size: var(--fs-1); color: var(--faint); padding: 0 var(--sp-1); }
 /* Yeni sürüm çıktığında aynı yer tıklanır olur. --faint okunacak metinde
-   kullanılamaz (§2.1) → duyuru --text ile gelir. Renk tek taşıyıcı değil:
-   metnin kendisi de değişiyor ("v1.0.0" → "v1.1.0 available"). */
-.tb-ver-new { color: var(--text); font-weight: 500; border-radius: var(--r-s); }
-.tb-ver-new:hover { background: var(--panel-2); }
+   kullanılamaz (§2.1) → duyuru --amber ile gelir (palette zaten var, dört temada
+   tanımlı). Renk TEK TAŞIYICI DEĞİL (§9): metnin kendisi de değişiyor
+   ("v1.0.0" → "v1.1.0 available"), renk körü kullanıcı için bilgi kaybı yok. */
+.tb-ver-new {
+  /* Kutu ölçüsü `.tb-ws` ile AYNI (28px / --sp-2 / --r-s): yan yana duran iki
+     tıklanır alanın hover hedefi farklı büyüklükte olmamalı — küçüğü kaza gibi
+     görünüyordu. */
+  height: 28px; padding: 0 var(--sp-2); border-radius: var(--r-s);
+  display: flex; align-items: center; gap: var(--sp-1);
+  color: var(--amber); font-weight: 500;
+  transition: background-color var(--dur-hover) var(--ease-out);
+}
+@media (hover: hover) and (pointer: fine) { .tb-ver-new:hover { background: var(--panel); } }
 
 .tb-spacer { flex: 1 1 auto; min-width: var(--sp-2); }
 .tb-right { display: flex; align-items: center; gap: var(--sp-1); flex: 0 0 auto; }
@@ -995,7 +1004,9 @@ input, textarea, select { font: inherit; }
   .palette-btn { flex: 0 0 auto; min-width: auto; }
 }
 @media (max-width: 1040px) {
-  .tb-ver { display: none; }
+  /* Sürüm düşer ama YENİ SÜRÜM DUYURUSU düşmez: bu satır bir bildirim, dekor
+     değil. Dar pencerede yerini `.tb-btn .tb-lbl`'ın düşmesi açar. */
+  .tb-ver:not(.tb-ver-new) { display: none; }
   .tb-btn .tb-lbl { display: none; }
 }
 @media (max-width: 900px) {
@@ -2692,6 +2703,18 @@ input, textarea, select { font: inherit; }
 .about-upd { display: flex; align-items: center; gap: var(--sp-2); flex-wrap: wrap; }
 .about-upd-t { flex: 1; min-width: 0; color: var(--dim); }
 .about-upd-t.lit { color: var(--text); font-weight: 500; }
+.about-upd .btn-ghost { flex: none; }
+/* Adres bir DÜĞME: güncellemeye giden yol bu. Etiketi adresin kendisi, o yüzden
+   ayrıca onay sorulmuyor — nereye gittiğini okumadan tıklayamıyorsun. */
+.about-upd-url {
+  /* Simge İLK SATIRA hizalanır (ErrorNote'taki gibi): adres iki satıra sarınca
+     ortalanmış simge hiçbir satırın hizasında durmuyordu. */
+  flex: 0 0 100%; display: flex; align-items: flex-start; gap: var(--sp-1);
+  font-size: var(--fs-1); color: var(--dim); text-align: left;
+  padding: var(--sp-1); margin: 0 calc(-1 * var(--sp-1)); border-radius: var(--r-s);
+}
+.about-upd-url svg { flex: none; }
+.about-upd-url:hover { color: var(--text); background: var(--panel-2); }
 .about-note { font-size: var(--fs-2); color: var(--dim); line-height: 1.6; margin: var(--sp-3) 0 0; }
 
 .dialog .dlg-foot { justify-content: space-between; }

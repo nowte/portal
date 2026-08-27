@@ -1,4 +1,4 @@
-import { BookOpen, ChevronDown, LifeBuoy, PanelLeft, Search } from "lucide-react";
+import { BookOpen, ChevronDown, Download, LifeBuoy, PanelLeft, Search } from "lucide-react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { usePortal } from "../context";
 import { openGuide, toggleSidebar } from "../dock/dock";
@@ -78,7 +78,8 @@ export function TopBar() {
           title={`Portal ${upd.version} is available — see About for the download link`}
           onClick={() => openAbout("about")}
         >
-          v{upd.version} available
+          <Download size={16} strokeWidth={1.75} />
+          <span>v{upd.version} available</span>
         </button>
       ) : (
         <span className="tb-ver" data-tauri-drag-region>
