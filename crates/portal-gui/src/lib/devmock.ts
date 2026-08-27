@@ -24,6 +24,13 @@ declare global {
   }
 }
 
+// Olay borusunun taklidi. Tauri'de `listen()` Rust'tan gelen olayları burada
+// kayıtlı geri çağrıya iletir; önizlemede iletecek Rust yok, o yüzden olayı
+// elle sürebilmek gerekiyor (aşağıdaki `portalEmit`, yalnız ?mock=demo).
+const cbs = new Map<number, (v: unknown) => void>();
+const listeners = new Map<string, (v: unknown) => void>();
+let cbSeq = 0;
+
 const EMPTY_BOOT = {
   theme: "black",
   onboarded: true,
@@ -99,6 +106,16 @@ function applyOverrides(): void {
     ];
     RESULTS.host_snippets = RESULTS.list_snippets;
     RESULTS.list_profiles = [{ id: "p1", name: "preview", lockedWithPassword: true, active: true }];
+
+    // Güncelleme şeridi + ≡ noktası tarayıcıda incelenebilsin (yalnız demo'da:
+    // varsayılan önizlemede sahte "yeni sürüm var" rozeti gerçek sanılırdı).
+    // Olay-güdümlü yüzeyleri (bildirim, terminal, transfer) tarayıcıda
+    // sürebilmek için: portalEmit("portal://monitor-changed", { … }).
+    // OTOMATİK tetiklenmez — demo ekran görüntülerine sahte uyarı düşmesin.
+    (window as unknown as Record<string, unknown>).portalEmit = (
+      event: string,
+      payload: unknown,
+    ) => listeners.get(event)?.({ event, id: 0, payload });
 
     // Uptime: biri ayakta, biri kesintide — iki durumu da gorebilmek icin.
     const now = Math.floor(Date.now() / 1000);
@@ -183,9 +200,21 @@ export function installDevMock(): void {
         const items = (args as { items?: string[] } | undefined)?.items ?? [];
         return Promise.resolve(items.map((_, i) => i));
       }
+      // `listen()` olay adını BURADA veriyor (transformCallback bilmiyor):
+      // dinleyiciyi ada bağla ki önizlemede olay-güdümlü yüzeyler de sürülebilsin.
+      if (cmd === "plugin:event|listen") {
+        const a = args as { event?: string; handler?: number };
+        const cb = cbs.get(a.handler ?? -1);
+        if (a.event && cb) listeners.set(a.event, cb);
+        return Promise.resolve(a.handler ?? 0);
+      }
       return Promise.resolve(RESULTS[cmd] ?? null);
     },
-    transformCallback: () => 0,
+    transformCallback: (cb) => {
+      const id = ++cbSeq;
+      cbs.set(id, cb);
+      return id;
+    },
     metadata: { currentWindow: { label: "main" }, currentWebview: { label: "main" } },
   };
   // ⚠️ `unlisten()` bunu AYRI bir global'den okur (@tauri-apps/api/event.js),

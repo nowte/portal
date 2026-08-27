@@ -989,6 +989,10 @@ input, textarea, select { font: inherit; }
    `gap` --sp-1: icon bar ile panel arasındaki boşluk, panelin kendi 4px'lik
    oluk payıyla toplanıp tam --sp-2 (8px) eder — ne yapışık ne kopuk. */
 .body {
+  /* Konumlandırma kabı: güncelleme şeridi buna yaslanır. Durum çubuğu .body'nin
+     DIŞINDA olduğu için şerit onu hiç örtmez — yüksekliğini sabit yazıp
+     senkronda tutmak gerekmiyor. */
+  position: relative;
   flex: 1; display: flex; min-height: 0;
   background: var(--bg); padding: var(--sp-1); gap: var(--sp-1);
 }
@@ -2662,7 +2666,86 @@ input, textarea, select { font: inherit; }
 .about-k { width: 96px; flex: none; font-size: var(--fs-2); font-weight: 600; color: var(--dim); }
 .about-v { flex: 1; min-width: 0; font-size: var(--fs-2); color: var(--text); word-break: break-all; }
 .about-note { font-size: var(--fs-2); color: var(--dim); line-height: 1.6; margin: var(--sp-3) 0 0; }
+
 .dialog .dlg-foot { justify-content: space-between; }
+
+/* ── Duyuru köşesi ───────────────────────────────────────────────────────
+   Monitör durum değişiminin uygulama içi bildirimi. Overlay katmanının
+   gövdesi: --panel-2 yüzey + gölge + --r-m. Scrim YOK — arkayı kilitlemiyor.
+   Giriş §3'ün mevcut p-rise'ı, yeni keyframe yok.
+
+   Birikince DESTE olur: en yeni önde, eskiler arkasında gölge katman. Köşe
+   yukarı doğru büyümediği için sekiz bildirim de gelse yükseklik sabit kalır.
+   Tıklanınca açılır ve hepsi listelenir. */
+.notes {
+  position: absolute; right: var(--sp-3); bottom: var(--sp-3); z-index: 40;
+  display: flex; flex-direction: column; justify-content: flex-end;
+  width: min(420px, calc(100vw - var(--sp-5)));
+  max-height: calc(100% - var(--sp-4));
+  /* Kap tıklamayı geçirir; yalnız destenin kendisi yakalar — boş köşe
+     altındaki panelin üstünü kapatmasın. */
+  pointer-events: none;
+}
+.deck { pointer-events: auto; min-height: 0; }
+
+/* ── Kapalı deste ──────────────────────────────────────────────────────── */
+/* Gölgelerin yukarı kayacağı pay: ön kart bu payın ALTINDAN başlar, gölgeler
+   payın içine taşar. Tek kaynak — katman ötelemeleri de buna oranlı. */
+.deck:not(.open) { position: relative; padding-top: var(--sp-3); }
+.deck:not(.open)[aria-label] { cursor: pointer; }
+.deck:not(.open) .note-front { position: relative; z-index: 2; }
+/* Gölge = ön kartın kutusunun birebir kopyası, içeriksiz. `top` payla aynı
+   olduğu için kutu ön kartla çakışır; transform onu yukarı çıkarır. */
+.deck:not(.open) .note-shadow {
+  position: absolute; left: 0; right: 0; top: var(--sp-3); bottom: 0;
+  z-index: 1; padding: 0;
+}
+/* Opaklık DÜŞÜRÜLMEZ: görünen tek şey üstte kalan birkaç piksellik şerit ve
+   soluk bir şerit koyu zeminde hiç okunmuyor (ölçüldü: 0.66'da görünmez).
+   Derinliği ölçek + öteleme taşıyor, saydamlık değil. */
+.deck:not(.open) .note-shadow[data-i="1"] { transform: translateY(-8px) scale(0.955); background: var(--panel); }
+.deck:not(.open) .note-shadow[data-i="2"] { transform: translateY(-15px) scale(0.912); background: var(--surface); z-index: 0; }
+.deck:not(.open):focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; border-radius: var(--r-m); }
+
+/* ── Açık deste ────────────────────────────────────────────────────────── */
+/* Liste kabı taşarsa KAYAR (kırpılmaz): "hepsini göster" dedikten sonra
+   ulaşılamayan şerit kalmamalı. */
+.deck.open {
+  display: flex; flex-direction: column; gap: var(--sp-2);
+  min-height: 0; overflow-y: auto;
+}
+.note-less {
+  flex: none; align-self: flex-end;
+  height: 24px; padding: 0 var(--sp-2); border-radius: var(--r-s);
+  background: var(--panel-2); color: var(--dim);
+  font-size: var(--fs-1); box-shadow: var(--shadow-pop);
+}
+@media (hover: hover) and (pointer: fine) { .note-less:hover { color: var(--text); } }
+
+/* ── Şeridin gövdesi ───────────────────────────────────────────────────── */
+.note {
+  flex: none;
+  border-radius: var(--r-m); background: var(--panel-2); box-shadow: var(--shadow);
+  padding: var(--sp-3);
+  /* Giriş HAFİF: 4px + fade (§3 p-rise) — tam yükseklik kayması bir köşe
+     şeridi için ağır kaçıyordu. */
+  animation: p-rise var(--dur-panel) var(--ease-out);
+}
+/* Çıkış girişten hızlı (§1 --dur-exit): aynı hareket ters yönde, yeni
+   keyframe açmadan. `forwards` olmadan şerit son karede geri belirirdi. */
+.note.leaving { animation: p-rise var(--dur-exit) var(--ease-out) reverse forwards; }
+.note-row { display: flex; align-items: center; gap: var(--sp-2); }
+.note-t { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.note-t b { font-size: var(--fs-2); font-weight: 600; }
+.note-s { font-size: var(--fs-1); color: var(--dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* Arkada kaç tane var — sayı TEK taşıyıcı değil, gölge katmanlar da gösteriyor. */
+.note-n {
+  flex: none; height: 20px; min-width: 20px; padding: 0 var(--sp-1); border-radius: var(--r-s);
+  display: inline-flex; align-items: center; justify-content: center;
+  background: var(--panel); color: var(--dim);
+  font-family: var(--mono); font-size: var(--fs-1);
+}
+.note .btn-primary { flex: none; }
 
 /* ── Ayarlar modalı ──────────────────────────────────────────────────────
    Mockup: 10-settings.html. Sekmeler alt çizgiyle değil, aktif sekmenin

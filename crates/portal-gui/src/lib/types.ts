@@ -242,3 +242,10 @@ export interface SessionInfo {
   kind: string;
   hostId: string;
 }
+
+/** Monitör durum değişimi — uygulama içi duyuru (portal://monitor-changed). */
+export interface MonitorChanged {
+  title: string;
+  body: string;
+  down: boolean;
+}

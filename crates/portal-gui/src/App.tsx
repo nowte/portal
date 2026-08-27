@@ -3,6 +3,7 @@ import { PortalProvider, usePortal } from "./context";
 import { TopBar } from "./components/TopBar";
 import { IconBar } from "./components/IconBar";
 import { StatusBar } from "./components/StatusBar";
+import { Notices } from "./components/Notices";
 import { LoadingScreen } from "./components/LoadingScreen";
 import { Onboarding } from "./components/Onboarding";
 import { UnlockScreen } from "./components/UnlockScreen";
@@ -77,6 +78,7 @@ function Shell() {
           <div className="body">
             <IconBar />
             <DockLayout />
+            <Notices />
           </div>
           <StatusBar />
         </div>

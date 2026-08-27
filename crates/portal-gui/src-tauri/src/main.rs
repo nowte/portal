@@ -1311,6 +1311,10 @@ fn pump_uptime(app: AppHandle) {
 
     let mut dirty = false;
     let mut last_save = std::time::Instant::now();
+    // Rozet SAYI DEĞİŞİNCE güncellenir. Her turda yeniden çizip Windows'a
+    // vermek 250ms'de bir boşa iş olurdu; sayıyı karşılaştırmak da monitör
+    // ekleme/silme/duraklatmayı ayrıca kancalamadan kapsıyor.
+    let mut shown = usize::MAX;
     loop {
         let state = app.state::<AppState>();
         while let Some(UptimeEvent::Checked(result)) =
@@ -1337,6 +1341,12 @@ fn pump_uptime(app: AppHandle) {
             let _ = app.emit("portal://uptime", UptimeMsg { monitor_id, up });
         }
 
+        let count = down_count(&app);
+        if count != shown {
+            shown = count;
+            set_badge(&app, count);
+        }
+
         if dirty && last_save.elapsed() >= SAVE_EVERY {
             if let Ok(log) = state.uptime_log.lock() {
                 // Yazılamazsa geçmiş bellekte kalır; bir sonraki turda yine denenir.
@@ -1355,6 +1365,189 @@ fn monitor_state(log: &UptimeLog, id: MonitorId) -> MonitorState {
     log.history(id)
         .map(portal_core::MonitorHistory::state)
         .unwrap_or_default()
+}
+
+/// Rozetin kırmızısı — DESIGN §23.12'nin adlandırılmış istisnası: görev çubuğu
+/// ve tepsi Windows'un yüzeyidir, Portal'ın monokrom paleti orada geçmez.
+const BADGE_RGB: [u8; 3] = [0xd0, 0x3a, 0x38];
+
+/// 3×5 bitmap rakamlar (her satırın alt 3 biti bir piksel satırı).
+///
+/// Neden gömülü font değil: rozet görev çubuğunda 16px'e iniyor ve o boyutta
+/// vektör font antialias'ı okunmayan bir lekeye dönüşüyor. Elle çizilen bitmap
+/// tam piksel sınırına oturur, her ölçekte keskin kalır. Bedeli: yalnız 0-9 ve
+/// "+" var — sayı ondan büyükse "9+" yazılır.
+const GLYPH_H: usize = 5;
+const DIGITS: [[u8; GLYPH_H]; 10] = [
+    [0b111, 0b101, 0b101, 0b101, 0b111],
+    [0b010, 0b110, 0b010, 0b010, 0b111],
+    [0b111, 0b001, 0b111, 0b100, 0b111],
+    [0b111, 0b001, 0b111, 0b001, 0b111],
+    [0b101, 0b101, 0b111, 0b001, 0b001],
+    [0b111, 0b100, 0b111, 0b001, 0b111],
+    [0b111, 0b100, 0b111, 0b101, 0b111],
+    [0b111, 0b001, 0b001, 0b001, 0b001],
+    [0b111, 0b101, 0b111, 0b101, 0b111],
+    [0b111, 0b101, 0b111, 0b001, 0b111],
+];
+const PLUS: [u8; GLYPH_H] = [0b000, 0b010, 0b111, 0b010, 0b000];
+
+/// `size` × `size` şeffaf kare üzerine kırmızı daire + içine sayı (RGBA).
+///
+/// Daire kenarı 1px'lik geçiş bandıyla yumuşatılır — sert kenar 16px'te
+/// tırtıklı görünüyor. Rakamlar tam piksel, yumuşatma YOK (bulanıklaşırdı).
+fn badge_rgba(size: u32, count: usize) -> Vec<u8> {
+    let mut px = vec![0u8; (size * size * 4) as usize];
+    let put = |px: &mut Vec<u8>, x: u32, y: u32, rgb: [u8; 3], a: f32| {
+        if x >= size || y >= size || a <= 0.0 {
+            return;
+        }
+        let i = ((y * size + x) * 4) as usize;
+        for k in 0..3 {
+            let under = f32::from(px[i + k]) * (1.0 - a);
+            px[i + k] = (f32::from(rgb[k]) * a + under) as u8;
+        }
+        px[i + 3] = px[i + 3].max((a * 255.0) as u8);
+    };
+
+    let c = (size as f32 - 1.0) / 2.0;
+    let r = c + 0.5;
+    for y in 0..size {
+        for x in 0..size {
+            let d = ((x as f32 - c).powi(2) + (y as f32 - c).powi(2)).sqrt();
+            put(&mut px, x, y, BADGE_RGB, (r - d).clamp(0.0, 1.0));
+        }
+    }
+
+    // 10 ve üstü tek hanede okunmaz → "9+".
+    let glyphs: Vec<[u8; GLYPH_H]> = if count > 9 {
+        vec![DIGITS[9], PLUS]
+    } else {
+        vec![DIGITS[count.min(9)]]
+    };
+    // Ölçek hem yüksekliğe hem GENİŞLİĞE sığmalı: iki glyph tek glyph kadar
+    // büyük çizilseydi daireden taşardı.
+    let units_w = glyphs.len() * 3 + glyphs.len().saturating_sub(1);
+    let by_h = ((size as f32 * 0.42) / GLYPH_H as f32).round() as u32;
+    let by_w = (size as f32 * 0.62) as u32 / units_w as u32;
+    let k = by_h.min(by_w).max(1);
+
+    let tw = units_w as u32 * k;
+    let th = GLYPH_H as u32 * k;
+    let x0 = (size - tw) / 2;
+    let y0 = (size - th) / 2;
+    for (gi, g) in glyphs.iter().enumerate() {
+        let gx = x0 + gi as u32 * 4 * k;
+        for (row, bits) in g.iter().enumerate() {
+            for col in 0..3u32 {
+                if bits & (1 << (2 - col)) == 0 {
+                    continue;
+                }
+                for dy in 0..k {
+                    for dx in 0..k {
+                        put(
+                            &mut px,
+                            gx + col * k + dx,
+                            y0 + row as u32 * k + dy,
+                            [0xff, 0xff, 0xff],
+                            1.0,
+                        );
+                    }
+                }
+            }
+        }
+    }
+    px
+}
+
+/// Uygulama ikonunun SAĞ ÜST köşesine rozet basılmış kopyası (tepsi ikonu).
+///
+/// Tepside ayrı bir ikon dosyası tutmuyoruz: rozet çalışma anında mevcut ikonun
+/// üzerine karıştırılıyor, böylece ikon değişirse rozet de kendiliğinden uyar.
+fn icon_with_badge(base: &tauri::image::Image<'_>, count: usize) -> tauri::image::Image<'static> {
+    let (w, h) = (base.width(), base.height());
+    let mut px = base.rgba().to_vec();
+    let d = (w.min(h) * 55 / 100).max(8);
+    // Ölçüler dışarıdan (Tauri'nin çözdüğü ikon) geliyor: tampon beklenen
+    // boyutta değilse ya da ikon rozetten küçükse indeksleme taşardı.
+    // Varsayım tutmuyorsa rozetsiz ikona düş — sayı görev çubuğunda zaten var.
+    if d > w || d > h || px.len() < (w as usize * h as usize * 4) {
+        return tauri::image::Image::new_owned(px, w, h);
+    }
+    let badge = badge_rgba(d, count);
+    for y in 0..d {
+        for x in 0..d {
+            let (dx, dy) = (w - d + x, y); // SAĞ ÜST
+            let (si, di) = (((y * d + x) * 4) as usize, ((dy * w + dx) * 4) as usize);
+            let a = f32::from(badge[si + 3]) / 255.0;
+            if a <= 0.0 {
+                continue;
+            }
+            for k in 0..3 {
+                let under = f32::from(px[di + k]) * (1.0 - a);
+                px[di + k] = (f32::from(badge[si + k]) * a + under) as u8;
+            }
+            px[di + 3] = px[di + 3].max(badge[si + 3]);
+        }
+    }
+    tauri::image::Image::new_owned(px, w, h)
+}
+
+/// Kesintide olan monitör sayısı — durum çubuğundaki "N down" ile AYNI sayı.
+///
+/// İki kilit ASLA aynı anda tutulmaz (önce liste alınır, kilit bırakılır, sonra
+/// geçmişe bakılır): ters sırada kilitleyen bir yol eklenirse kilitlenme olurdu.
+fn down_count(app: &AppHandle) -> usize {
+    let state = app.state::<AppState>();
+    let ids: Vec<MonitorId> = {
+        let Ok(store) = state.lock() else {
+            return 0;
+        };
+        store
+            .monitors()
+            .iter()
+            .filter(|m| m.enabled)
+            .map(|m| m.id)
+            .collect()
+    };
+    let Ok(log) = state.uptime_log.lock() else {
+        return 0;
+    };
+    ids.iter()
+        .filter(|id| monitor_state(&log, **id) == MonitorState::Down)
+        .count()
+}
+
+/// Görev çubuğu + tepsi rozetini sayıyla günceller (0 → rozet kalkar).
+///
+/// İki yüzey birden: pencere açıkken görev çubuğu düğmesi vardır, tepsiye
+/// inildiğinde YOKTUR — o hâlde haberi taşıyacak tek şey tepsi ikonudur.
+/// ⚠️ Görev çubuğunda kaplama ikonunun KÖŞESİNİ Windows seçer (hep sağ alt);
+/// yalnız tepside — ikonu biz çizdiğimiz için — rozet sağ üstte durur.
+fn set_badge(app: &AppHandle, count: usize) {
+    if let Some(win) = app.get_webview_window("main") {
+        #[cfg(target_os = "windows")]
+        let _ = win.set_overlay_icon(
+            (count > 0).then(|| tauri::image::Image::new_owned(badge_rgba(32, count), 32, 32)),
+        );
+        #[cfg(not(target_os = "windows"))]
+        let _ = win.set_badge_count((count > 0).then_some(count as i64));
+    }
+    let (Some(tray), Some(base)) = (app.tray_by_id("main"), app.default_window_icon()) else {
+        return;
+    };
+    let _ = tray.set_icon(Some(if count > 0 {
+        icon_with_badge(base, count)
+    } else {
+        base.clone()
+    }));
+    let _ = tray.set_tooltip(Some(&if count == 1 {
+        "Portal — 1 monitor is down".to_string()
+    } else if count > 1 {
+        format!("Portal — {count} monitors are down")
+    } else {
+        "Portal".to_string()
+    }));
 }
 
 /// Durum değişiminde masaüstü bildirimi gönderir.
@@ -1388,7 +1581,8 @@ fn notify_state_change(
     let Some(monitor) = store.monitors().iter().find(|m| m.id == id) else {
         return;
     };
-    let (title, body) = if after == MonitorState::Down {
+    let down = after == MonitorState::Down;
+    let (title, body) = if down {
         (
             format!("{} is down", monitor.label),
             reason.unwrap_or_else(|| monitor.target.display()),
@@ -1401,7 +1595,39 @@ fn notify_state_change(
     };
     drop(store);
 
+    // Uygulama içi duyuru HER durumda gider — Portal'a bakan kullanıcı haberi
+    // kendi arayüzünde görür.
+    let _ = app.emit(
+        "portal://monitor-changed",
+        MonitorChanged {
+            title: title.clone(),
+            body: body.clone(),
+            down,
+        },
+    );
+
+    // Sistem bildirimi YALNIZ kullanıcı başka yerdeyken. Portal önündeyken toast
+    // atmak aynı haberi iki kez söylemek ve ekranı boşuna kesmek olurdu; tepsiye
+    // inilmişse tam tersi — uygulama içi şerit kimseye ulaşmaz, toast tek yoldur.
+    if window_is_front(app) {
+        return;
+    }
     let _ = app.notification().builder().title(title).body(body).show();
+}
+
+/// Monitör durum değişiminin uygulama içi duyurusu.
+#[derive(Clone, Serialize)]
+struct MonitorChanged {
+    title: String,
+    body: String,
+    down: bool,
+}
+
+/// Pencere kullanıcının önünde mi (görünür VE odaklı).
+fn window_is_front(app: &AppHandle) -> bool {
+    app.get_webview_window("main")
+        .and_then(|w| Some(w.is_visible().ok()? && w.is_focused().ok()?))
+        .unwrap_or(false)
 }
 
 /// Frontend'e giden kontrol bildirimi (ayrıntıyı panel `list_monitors` ile çeker).
@@ -1539,9 +1765,95 @@ fn main() {
 
 #[cfg(test)]
 mod tests {
-    use super::{cert_alert, checked_web_url, monitor_state};
+    use super::{badge_rgba, cert_alert, checked_web_url, monitor_state};
     use portal_core::uptime_log::{CheckResult, MonitorState, UptimeLog};
     use portal_core::MonitorId;
+
+    /// Rozetin pikselleri: daire dolu, köşe şeffaf, içinde beyaz rakam var.
+    /// Bu kod elle bit çeviriyor — bozulursa görev çubuğunda boş kırmızı
+    /// daire çıkar ve kimse fark etmez.
+    #[test]
+    fn badge_draws_a_filled_circle_with_a_number() {
+        const N: u32 = 32;
+        let px = badge_rgba(N, 3);
+        assert_eq!(px.len(), (N * N * 4) as usize);
+
+        let at = |x: u32, y: u32| {
+            let i = ((y * N + x) * 4) as usize;
+            (px[i], px[i + 1], px[i + 2], px[i + 3])
+        };
+        // Köşe daire dışında → tamamen şeffaf.
+        assert_eq!(at(0, 0).3, 0, "kösede rozet tasiyor");
+        // Kenar ortası daire içinde → opak.
+        assert_eq!(at(1, N / 2).3, 255, "daire kenara kadar dolmuyor");
+
+        // Rakam beyaz pikseller bırakmalı ve daireyi TAŞMAMALI.
+        let white = (0..N * N)
+            .filter(|i| {
+                let j = (i * 4) as usize;
+                px[j] > 240 && px[j + 1] > 240 && px[j + 2] > 240 && px[j + 3] == 255
+            })
+            .count();
+        assert!(white > 8, "rakam cizilmemis (beyaz piksel: {white})");
+        assert!(white < (N * N / 4) as usize, "rakam daireden tasiyor");
+    }
+
+    /// 9'dan büyük sayı "9+" olarak çizilir — iki glyph tek glyph'ten GENİŞ
+    /// yer kaplar ama yine daireye sığar.
+    #[test]
+    fn badge_falls_back_to_nine_plus() {
+        let span = |count: usize| {
+            const N: u32 = 32;
+            let px = badge_rgba(N, count);
+            let cols: Vec<u32> = (0..N)
+                .filter(|x| {
+                    (0..N).any(|y| {
+                        let j = ((y * N + x) * 4) as usize;
+                        px[j] > 240 && px[j + 1] > 240 && px[j + 2] > 240
+                    })
+                })
+                .collect();
+            match (cols.first(), cols.last()) {
+                (Some(a), Some(b)) => b - a + 1,
+                _ => 0,
+            }
+        };
+        assert!(span(7) > 0 && span(42) > 0);
+        assert!(span(42) > span(7), "9+ tek haneden genis olmali");
+        assert!(span(42) <= 32, "9+ daireden tasiyor");
+    }
+
+    /// Rozet SAĞ ÜST köşeye basılır ve ikonun geri kalanına dokunmaz.
+    /// Köşe yanlış hesaplanırsa marka'nın üstü kapanır ve tepside ne olduğu
+    /// anlaşılmaz.
+    #[test]
+    fn tray_badge_lands_in_the_top_right_corner() {
+        const N: u32 = 64;
+        // Düz opak-beyaz taban: rozet nereye değdiyse orası değişmiş olur.
+        let raw = vec![0xffu8; (N * N * 4) as usize];
+        let base = tauri::image::Image::new(&raw, N, N);
+        let out = super::icon_with_badge(&base, 2);
+        let px = out.rgba();
+
+        let changed = |x: u32, y: u32| {
+            let i = ((y * N + x) * 4) as usize;
+            px[i] != 0xff || px[i + 1] != 0xff || px[i + 2] != 0xff
+        };
+        assert!(changed(N - 6, 6), "sag ustte rozet yok");
+        assert!(!changed(6, N - 6), "sol alta tasmis");
+        assert!(!changed(6, 6), "sol uste tasmis");
+        assert!(!changed(N - 6, N - 6), "sag alta tasmis");
+    }
+
+    /// Beklenmedik ölçüde bir ikon gelirse indeksleme taşardı — o hâlde rozet
+    /// çizilmez ama uygulama da düşmez (bu kod pencere olay döngüsünden çağrılıyor).
+    #[test]
+    fn tray_badge_gives_up_on_a_malformed_icon() {
+        let raw = vec![0u8; 4]; // 1 piksellik tampon, 8x8 olduğu iddia ediliyor
+        let base = tauri::image::Image::new(&raw, 8, 8);
+        let out = super::icon_with_badge(&base, 3);
+        assert_eq!(out.rgba().len(), 4, "bozuk ikonda cizmeye kalkmis");
+    }
 
     fn check(id: MonitorId, at: u64, up: bool) -> CheckResult {
         CheckResult {

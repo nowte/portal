@@ -19,6 +19,7 @@ import type {
   Snippet,
   SyncInfo,
   SyncResult,
+  MonitorChanged,
 } from "./types";
 
 export const getBootstrap = (): Promise<Bootstrap> => invoke<Bootstrap>("get_bootstrap");
@@ -200,6 +201,10 @@ export const setMinimizeToTray = (enabled: boolean): Promise<void> =>
 /** Monitör düşüp kalkınca masaüstü bildirimi gönderilsin mi. */
 export const setNotifyUptime = (enabled: boolean): Promise<void> =>
   invoke("set_notify_uptime", { enabled });
+
+/** Bir monitör düşünce/geri gelince Rust yayınlar (yalnız DEĞİŞİMDE). */
+export const onMonitorChanged = (cb: (m: MonitorChanged) => void): Promise<UnlistenFn> =>
+  listen<MonitorChanged>("portal://monitor-changed", (e) => cb(e.payload));
 
 // ── Yerel dosya sistemi ────────────────────────────────
 export const listLocal = (path: string): Promise<LocalListing> =>

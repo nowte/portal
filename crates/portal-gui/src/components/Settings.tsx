@@ -230,7 +230,10 @@ export function Settings() {
               <h3 className="set-h">Notifications</h3>
               <p className="set-sub">
                 Portal tells you when a monitored site or port stops answering, and again
-                when it comes back. Only on a change — not on every check.
+                when it comes back. Only on a change — not on every check. If Portal is
+                the window you are looking at, it says so inside the app; if you are
+                somewhere else or Portal is in the tray, it sends a desktop notification
+                instead. This switch turns off both.
               </p>
               <button
                 className={"hf-check lit" + (notify ? " on" : "")}

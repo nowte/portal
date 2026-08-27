@@ -18,3 +18,7 @@ Thumbs.db
 .env
 .env.*
 *.log
+
+# özel anahtar — ne olursa olsun commit edilmez (§10.3)
+*.key
+*.pem

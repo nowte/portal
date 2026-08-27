@@ -133,7 +133,7 @@ export function PortalProvider({ children }: { children: ReactNode }) {
   }, []);
 
   useEffect(() => {
-    let unlisten: (() => void) | undefined;
+    const off: Array<() => void> = [];
     void (async () => {
       try {
         adoptBootstrap(await ipc.getBootstrap());
@@ -141,12 +141,14 @@ export function PortalProvider({ children }: { children: ReactNode }) {
         console.error("bootstrap failed", e);
       }
       setReady(true);
-      unlisten = await ipc.onHostsChanged(() => {
-        void refresh();
-      });
+      off.push(
+        await ipc.onHostsChanged(() => {
+          void refresh();
+        }),
+      );
     })();
     return () => {
-      if (unlisten) unlisten();
+      for (const f of off) f();
     };
   }, [refresh, adoptBootstrap]);
 
