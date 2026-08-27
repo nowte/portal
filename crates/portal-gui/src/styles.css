@@ -272,19 +272,26 @@ input, textarea, select { font: inherit; }
 /* ⚠️ Ama çıplak `input` KÖŞESİ KESKİNDİR. Yuvarlak bir kutunun (arama alanı, form
    sarmalayıcısı) içinde otururken halka o keskin dikdörtgeni takip ediyor ve
    kutunun dışına BEYAZ KÖŞELER olarak taşıyordu (kullanıcı bulgusu). Halkayı
-   input'tan alıp KUTUYA taşı: görünür odak korunur (§10), köşe taşması biter. */
+   input'tan alıp KUTUYA taşı: görünür odak korunur (§10), köşe taşması biter.
+   ⚠️ YUVARLAK bir kutuya çıplak input koyan HER yer bu listeye girer — Home'un
+   quick connect'i ve Snippets aramasi eklenmeyi unutulmuştu, ikisi de aynı beyaz
+   köşeleri gösteriyordu. */
 .search input:focus-visible,
 .sin input:focus-visible,
 .pal-in input:focus-visible,
 .fwrap input:focus-visible,
 .fwrap textarea:focus-visible,
+.quickconnect input:focus-visible,
+.snm-search input:focus-visible,
 .fpath-edit:focus-visible {
   outline: none;
 }
 .search:has(input:focus-visible),
 .sin:has(input:focus-visible),
 .fwrap:has(input:focus-visible),
-.fwrap:has(textarea:focus-visible) {
+.fwrap:has(textarea:focus-visible),
+.quickconnect:has(input:focus-visible),
+.snm-search:has(input:focus-visible) {
   outline: 2px solid var(--primary);
   outline-offset: 2px;
 }
