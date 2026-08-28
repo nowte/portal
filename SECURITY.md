@@ -8,7 +8,7 @@ wrong, it is worth telling us about properly.
 **Please do not open a public issue for a security problem.**
 
 Use GitHub's [private vulnerability reporting](https://github.com/nowte/portal/security/advisories/new)
-on this repository, or email **security@nowtes.co**.
+on this repository, or email **aahmetemin888@gmail.com**.
 
 Include what you can: what you found, how to reproduce it, which version or commit,
 and what an attacker could do with it. A rough report is better than no report.
